@@ -1,0 +1,280 @@
+/// Prisma schema — Arsaba V2
+/// Berdasarkan SPESIFIKASI_SISTEM.md §3, §4.1, §4.3, §6, §7, §8
+/// Catatan: User & Employee digabung jadi satu model (satu orang = satu akun login = satu data karyawan)
+/// supaya tidak ada relasi ganda yang saling tumpang tindih.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+// ============ ENUMS ============
+
+enum Role {
+  DIREKTUR
+  MANAJER
+  SUPERVISOR
+  ADMIN
+  KEPALA_TOKO
+  KARYAWAN
+}
+
+enum StatusKaryawan {
+  AKTIF
+  RESIGN
+  NONAKTIF
+}
+
+enum TipePerhitunganGaji {
+  HARIAN
+  BULANAN
+}
+
+enum SumberAgenda {
+  TEMPLATE_PUSAT
+  MANDIRI_KARYAWAN
+}
+
+enum StatusVerifikasi {
+  PENDING_VERIFIKASI
+  DIVERIFIKASI
+  DITOLAK
+}
+
+// ============ USER / KARYAWAN ============
+// Satu model untuk semua peran: Direktur, Manajer, Supervisor, Admin, Kepala Toko, Karyawan.
+
+model User {
+  id                  String               @id @default(cuid())
+  nama                String
+  email               String?              @unique
+  emailVerified       DateTime?
+  image               String?
+
+  role                Role                 @default(KARYAWAN)
+  status              StatusKaryawan       @default(AKTIF)
+  tipePerhitunganGaji TipePerhitunganGaji?
+  tanggalMasuk        DateTime?
+
+  // --- Data pribadi (PII) — akses baca/tulis dibatasi Admin & Manajer saja di level aplikasi (§3, §11) ---
+  nik                 String?              @unique
+  tempatLahir         String?
+  tanggalLahir        DateTime?
+  alamat              String?
+  kontakDarurat       String?
+
+  // Penempatan toko saat ini (nullable untuk Direktur yang tidak terikat satu toko)
+  storeId             String?
+  store               Store?               @relation("StoreEmployees", fields: [storeId], references: [id])
+
+  // --- Relasi ---
+  attendances         Attendance[]         @relation("EmployeeAttendances")
+  verifiedAttendances Attendance[]         @relation("VerifierAttendances")
+
+  agendasCreated      Agenda[]             @relation("AgendaCreator")
+  agendasVerified     Agenda[]             @relation("AgendaVerifier")
+  agendasTargeted     Agenda[]             @relation("AgendaTarget")
+
+  riwayatPenempatan   RiwayatPenempatan[]  @relation("RiwayatEmployee")
+  auditLogs           AuditLog[]           @relation("AuditActor")
+
+  gajiPokok           GajiPokok?
+  payrolls            Payroll[]
+
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  @@index([role])
+  @@index([storeId])
+  @@index([status])
+}
+
+// ============ TOKO ============
+
+model Store {
+  id           String   @id @default(cuid())
+  nama         String
+  // Alias nama lama, lihat §4.1/§4.3: "DAPUR RUMAH" → "Dapur Produksi", "ARSABA DIENG" → "Counter Dieng"
+  alias        String?
+  aktif        Boolean  @default(true)
+
+  employees    User[]              @relation("StoreEmployees")
+  attendances  Attendance[]
+  agendas      Agenda[]
+  salesRecords SalesRecord[]
+
+  riwayatDari  RiwayatPenempatan[] @relation("RiwayatDariToko")
+  riwayatKe    RiwayatPenempatan[] @relation("RiwayatKeToko")
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// Riwayat mutasi/resign karyawan — jangan pernah hard-delete karyawan (§8)
+model RiwayatPenempatan {
+  id                 String    @id @default(cuid())
+  employee           User      @relation("RiwayatEmployee", fields: [employeeId], references: [id])
+  employeeId         String
+  dariToko           Store?    @relation("RiwayatDariToko", fields: [dariTokoId], references: [id])
+  dariTokoId         String?
+  keToko             Store     @relation("RiwayatKeToko", fields: [keTokoId], references: [id])
+  keTokoId           String
+  tanggalPerpindahan DateTime  @default(now())
+  alasan             String?
+  createdAt          DateTime  @default(now())
+
+  @@index([employeeId])
+}
+
+// ============ ABSENSI ============
+
+model Attendance {
+  id           String            @id @default(cuid())
+  employee     User              @relation("EmployeeAttendances", fields: [employeeId], references: [id])
+  employeeId   String
+  store        Store             @relation(fields: [storeId], references: [id])
+  storeId      String
+
+  tanggalShift DateTime
+  shiftMulai   DateTime
+  shiftSelesai DateTime
+  absenWaktu   DateTime
+
+  // Hitung otomatis di server — §5.1: toleransi 5 menit, potongan Rp1.000/menit setelahnya
+  menitTelat   Int               @default(0)
+  potongan     Int               @default(0)
+
+  fotoFileId   String // Telegram file_id — JANGAN simpan URL getFile yang sementara (§10)
+  latitude     Float? // geolokasi hanya informasi pembantu verifikator (§5.1), tidak memblokir absen
+  longitude    Float?
+
+  status       StatusVerifikasi  @default(PENDING_VERIFIKASI)
+  verifiedBy   User?             @relation("VerifierAttendances", fields: [verifiedById], references: [id])
+  verifiedById String?
+  verifiedAt   DateTime?
+
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@index([employeeId])
+  @@index([storeId])
+  @@index([status])
+}
+
+// ============ AGENDA & BONUS ============
+// Dua sumber (§6): template_pusat (dibuat Manajer/Supervisor/Admin) & mandiri_karyawan (laporan sendiri).
+
+model Agenda {
+  id               String            @id @default(cuid())
+  judul            String
+  deskripsi        String?
+  nominal          Int // bonus per agenda, diatur Manajer (§6)
+  sumber           SumberAgenda
+
+  // Target opsional: agenda bisa berlaku umum, ke toko tertentu, atau ke karyawan tertentu (§6)
+  targetStore      Store?            @relation(fields: [targetStoreId], references: [id])
+  targetStoreId    String?
+  targetEmployee   User?             @relation("AgendaTarget", fields: [targetEmployeeId], references: [id])
+  targetEmployeeId String?
+
+  createdBy        User              @relation("AgendaCreator", fields: [createdById], references: [id])
+  createdById      String
+
+  status           StatusVerifikasi  @default(PENDING_VERIFIKASI)
+  verifiedBy       User?             @relation("AgendaVerifier", fields: [verifiedById], references: [id])
+  verifiedById     String?
+  verifiedAt       DateTime?
+
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([sumber])
+  @@index([status])
+  @@index([targetStoreId])
+  @@index([targetEmployeeId])
+}
+
+// ============ GAJI & PAYROLL (§7) ============
+
+model GajiPokok {
+  id         String   @id @default(cuid())
+  employee   User     @relation(fields: [employeeId], references: [id])
+  employeeId String   @unique
+  nominal    Int // ditentukan pusat (Manajer), bukan per toko (§7.1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// Satu record per karyawan per bulan — dipakai untuk tipe HARIAN maupun BULANAN,
+// bedanya hanya cara `totalGaji` dihitung di level aplikasi (§7.1).
+model Payroll {
+  id                      String    @id @default(cuid())
+  employee                User      @relation(fields: [employeeId], references: [id])
+  employeeId              String
+  periode                 DateTime // tanggal 1 di bulan terkait, contoh: 2026-09-01
+
+  gajiPokok               Int
+  totalHariKerja          Int?     // relevan untuk tipe HARIAN
+  totalBonusAgenda        Int       @default(0) // dari agenda terverifikasi (§6)
+  totalPotonganTelat      Int       @default(0) // dari akumulasi Attendance.potongan (§5.1)
+  bonusManual             Int       @default(0) // input manual Manajer (§7.1)
+  potonganManual          Int       @default(0) // input manual Manajer (§7.1)
+  bonusPerforma           Int       @default(0) // manual sepenuhnya, TIDAK dihitung otomatis (§7.1)
+  keteranganBonusPerforma String?
+
+  totalGaji               Int // hasil akhir setelah semua komponen di atas dijumlah/dikurangi
+
+  status                  String    @default("DRAFT") // DRAFT | LOCKED
+  lockedAt                DateTime?
+  lockedById              String?
+
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@unique([employeeId, periode])
+  @@index([periode])
+  @@index([status])
+}
+
+// ============ AUDIT LOG (§8, §11) ============
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  tabel        String // nama tabel/entitas yang diubah
+  recordId     String // id record yang diubah
+  aksi         String // "CREATE" | "UPDATE" | "DELETE"
+  nilaiSebelum Json?
+  nilaiSesudah Json?
+  actor        User     @relation("AuditActor", fields: [actorId], references: [id])
+  actorId      String
+  alasan       String?
+  createdAt    DateTime @default(now())
+
+  @@index([tabel, recordId])
+  @@index([actorId])
+}
+
+// ============ MODUL PENJUALAN PER TOKO (§4.2) ============
+// Sengaja generik (kolom `data` berupa JSON) karena tiap modul (Epos, Brilink, Pulsa,
+// Bensin, Nota Harian, Komoditas) punya field berbeda — lihat §4.2 untuk struktur JSON per modul.
+
+model SalesRecord {
+  id         String   @id @default(cuid())
+  store      Store    @relation(fields: [storeId], references: [id])
+  storeId    String
+  tanggal    DateTime
+  shift      String?
+  modul      String // "EPOS" | "BRILINK" | "PULSA" | "BENSIN" | "NOTA_HARIAN" | "KOMODITAS"
+  sumberData String   @default("manual") // "manual" | "sinkron_epos" (§4.2.1)
+  data       Json // struktur field mengikuti modul, lihat §4.2.1–§4.2.7
+
+  createdAt  DateTime @default(now())
+
+  @@index([storeId, tanggal])
+  @@index([modul])
+}
