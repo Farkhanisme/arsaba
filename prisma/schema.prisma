@@ -54,6 +54,7 @@ model User {
   nama                String
   email               String?              @unique
   emailVerified       DateTime?
+  hashedPassword      String?              // nullable: migrasi data lama belum punya password, Admin set saat aktivasi
   image               String?
 
   role                Role                 @default(KARYAWAN)
