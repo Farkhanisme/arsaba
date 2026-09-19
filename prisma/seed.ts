@@ -5,7 +5,11 @@ const prisma = new PrismaClient();
 
 async function main() {
   const email = "admin@arsaba.local";
-  const plainPassword = "admin123";
+  const plainPassword = process.env.SEED_ADMIN_PASSWORD;
+  if (!plainPassword) {
+    console.error("SEED_ADMIN_PASSWORD belum diset di .env. Set dulu sebelum menjalankan seed.");
+    process.exit(1);
+  }
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
