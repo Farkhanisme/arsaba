@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
+import { AbsensiForm } from "@/components/absensi/absensi-form";
 
 export default async function AbsensiPage() {
   const session = await auth();
@@ -23,9 +24,7 @@ export default async function AbsensiPage() {
   return (
     <main className="container mx-auto max-w-xl p-6">
       <h1 className="text-2xl font-bold">Absensi</h1>
-      <p className="mt-2 text-muted-foreground">
-        Form absensi akan ditambahkan di langkah berikutnya.
-      </p>
+      <AbsensiForm />
     </main>
   );
 }
