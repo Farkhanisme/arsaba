@@ -1,0 +1,15 @@
+-- AlterTable
+ALTER TABLE "Attendance" DROP COLUMN "absenWaktu",
+DROP COLUMN "fotoFileId",
+DROP COLUMN "latitude",
+DROP COLUMN "longitude",
+ADD COLUMN     "absenKeluar" TIMESTAMP(3),
+ADD COLUMN     "absenMasuk" TIMESTAMP(3) NOT NULL,
+ADD COLUMN     "fotoKeluarFileId" TEXT,
+ADD COLUMN     "fotoMasukFileId" TEXT NOT NULL,
+ADD COLUMN     "latitudeKeluar" DOUBLE PRECISION,
+ADD COLUMN     "latitudeMasuk" DOUBLE PRECISION,
+ADD COLUMN     "longitudeKeluar" DOUBLE PRECISION,
+ADD COLUMN     "longitudeMasuk" DOUBLE PRECISION,
+ALTER COLUMN "shiftMulai" DROP NOT NULL,
+ALTER COLUMN "shiftSelesai" DROP NOT NULL;

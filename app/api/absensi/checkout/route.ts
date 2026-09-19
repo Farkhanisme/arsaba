@@ -3,28 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { uploadToTelegram } from "@/lib/telegram";
 import { NextRequest, NextResponse } from "next/server";
 
-const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
-
-// Konversi Date (UTC instant) ke tanggal WIB, dikembalikan sebagai Date di UTC midnight.
-function computeTanggalShiftWIB(date: Date): Date {
-  const wib = new Date(date.getTime() + WIB_OFFSET_MS);
-  return new Date(Date.UTC(wib.getUTCFullYear(), wib.getUTCMonth(), wib.getUTCDate()));
-}
-
-// POST /api/absensi — CHECK-IN absensi.
-// absenMasuk ditentukan server, tidak menerima timestamp dari client.
+// POST /api/absensi/checkout — CHECK-OUT absensi.
+// Mencari record check-in aktif (absenKeluar null) milik user, lalu mengisinya.
+// absenKeluar ditentukan server, tidak menerima timestamp dari client.
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-    }
-
-    if (!session.user.storeId) {
-      return NextResponse.json(
-        { error: "Akun ini tidak terhubung ke toko manapun, tidak bisa mengajukan absensi" },
-        { status: 400 }
-      );
     }
 
     const formData = await request.formData();
@@ -45,38 +31,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Longitude tidak valid" }, { status: 400 });
     }
 
-    // Cegah check-in dobel: tolak jika masih ada record dengan absenKeluar null
+    // Cari shift aktif: record milik user ini dengan absenKeluar masih null
     const existing = await prisma.attendance.findFirst({
       where: { employeeId: session.user.id, absenKeluar: null },
+      orderBy: { absenMasuk: "desc" },
     });
-    if (existing) {
+    if (!existing) {
       return NextResponse.json(
-        { error: "Anda masih dalam shift yang belum check-out. Lakukan check-out terlebih dahulu." },
+        { error: "Tidak ada shift aktif. Lakukan check-in terlebih dahulu." },
         { status: 409 }
       );
     }
 
     const arrayBuffer = await foto.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const filename = foto.name || `absensi-masuk-${Date.now()}.jpg`;
+    const filename = foto.name || `absensi-keluar-${Date.now()}.jpg`;
 
     const uploadResult = await uploadToTelegram(buffer, filename, { asDocument: false });
 
-    const absenMasuk = new Date();
-    const tanggalShift = computeTanggalShiftWIB(absenMasuk);
-
-    const attendance = await prisma.attendance.create({
+    const attendance = await prisma.attendance.update({
+      where: { id: existing.id },
       data: {
-        employeeId: session.user.id,
-        storeId: session.user.storeId,
-        fotoMasukFileId: uploadResult.fileId,
-        status: "PENDING_VERIFIKASI",
-        tanggalShift,
-        absenMasuk,
-        menitTelat: 0,
-        potongan: 0,
-        latitudeMasuk: latitude,
-        longitudeMasuk: longitude,
+        absenKeluar: new Date(),
+        fotoKeluarFileId: uploadResult.fileId,
+        latitudeKeluar: latitude,
+        longitudeKeluar: longitude,
       },
     });
 
@@ -85,6 +64,7 @@ export async function POST(request: NextRequest) {
       employeeId: attendance.employeeId,
       storeId: attendance.storeId,
       fotoMasukFileId: attendance.fotoMasukFileId,
+      fotoKeluarFileId: attendance.fotoKeluarFileId,
       status: attendance.status,
       tanggalShift: attendance.tanggalShift.toISOString(),
       absenMasuk: attendance.absenMasuk.toISOString(),
@@ -93,10 +73,12 @@ export async function POST(request: NextRequest) {
       potongan: attendance.potongan,
       latitudeMasuk: attendance.latitudeMasuk,
       longitudeMasuk: attendance.longitudeMasuk,
+      latitudeKeluar: attendance.latitudeKeluar,
+      longitudeKeluar: attendance.longitudeKeluar,
       createdAt: attendance.createdAt.toISOString(),
     });
   } catch (err) {
-    console.error("POST /api/absensi error:", err);
+    console.error("POST /api/absensi/checkout error:", err);
     if (err instanceof Error && err.message.includes("Telegram")) {
       return NextResponse.json(
         { error: `Gagal upload ke Telegram: ${err.message}` },
@@ -104,7 +86,7 @@ export async function POST(request: NextRequest) {
       );
     }
     return NextResponse.json(
-      { error: "Gagal memproses absensi. Silakan coba lagi." },
+      { error: "Gagal memproses check-out. Silakan coba lagi." },
       { status: 500 }
     );
   }

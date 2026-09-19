@@ -141,18 +141,19 @@ model Attendance {
   store      Store  @relation(fields: [storeId], references: [id])
   storeId    String
 
-  tanggalShift DateTime @db.Date
-  shiftMulai   DateTime
-  shiftSelesai DateTime
-  absenWaktu   DateTime
-
-  // Hitung otomatis di server — §5.1: toleransi 5 menit, potongan Rp1.000/menit setelahnya
-  menitTelat Int @default(0)
-  potongan   Int @default(0)
-
-  fotoFileId String // Telegram file_id — JANGAN simpan URL getFile yang sementara (§10)
-  latitude   Float? // geolokasi hanya informasi pembantu verifikator (§5.1), tidak memblokir absen
-  longitude  Float?
+  tanggalShift  DateTime  @db.Date
+  shiftMulai    DateTime?
+  shiftSelesai  DateTime?
+  absenMasuk    DateTime
+  absenKeluar   DateTime?
+  menitTelat    Int           @default(0)
+  potongan      Int           @default(0)
+  fotoMasukFileId   String
+  fotoKeluarFileId  String?
+  latitudeMasuk     Float?
+  longitudeMasuk    Float?
+  latitudeKeluar    Float?
+  longitudeKeluar   Float?
 
   status       StatusVerifikasi @default(PENDING_VERIFIKASI)
   verifiedBy   User?            @relation("VerifierAttendances", fields: [verifiedById], references: [id])
