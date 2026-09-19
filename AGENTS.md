@@ -120,3 +120,11 @@
 - If adding a new store shift pattern: verify the system supports **weekday vs weekend differentiation** (BGM Dieng pattern) before assuming a simple 7-day repeat.
 - If verifying attendance penalty: test the formula with exactly 5 min late (should be Rp0), 6 min late (Rp1000), 11 min late (Rp6000).
 - If checking PAM auto-enable: test with exactly 3 employees (should NOT auto-show PAM) vs 4 employees (should auto-show).
+
+## Prisma — Migration & Format
+
+- **Jangan pakai `prisma migrate dev`** — hanya gunakan `prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --script` untuk preview SQL migration.
+- **Buat folder migration secara manual** dengan timestamp: `mkdir -p prisma/migrations/<YYYYMMDDHHMMSS>_<nama_migration>` lalu buat file `migration.sql` di dalamnya (satu statement per baris, diakhiri titik koma).
+- **Apply migration dengan `npx prisma migrate deploy`** (bukan `prisma migrate dev`).
+- **`tanggalShift` di `Attendance` disimpan sebagai `@db.Date` (date-only), dihitung dari `shiftMulai` dalam zona WIB (Asia/Jakarta)** menggunakan helper `computeTanggalShiftWIB`. Jangan pernah menulis `tanggalShift: shiftMulai` langsung.
+- **Jangan jalankan `prisma format` di sesi normal** — ia mereformat seluruh file dan mengotori `git blame`. Kalau perlu format, lakukan di commit chore terpisah tanpa perubahan substantif.
