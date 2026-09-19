@@ -56,6 +56,7 @@ Supaya setiap sesi vibe-coding (model apa pun yang dipakai) tidak menebak ulang 
 | Auth | **Auth.js (NextAuth)** |
 | Push notification | **OneSignal (free tier)** |
 | Struktur folder | Mengikuti konvensi default Next.js App Router (`app/`, `lib/`, `prisma/`) — jangan buat struktur custom di luar itu tanpa alasan kuat |
+| UI Kit | Tailwind CSS + shadcn/ui |
 
 **Aturan untuk AI/agent yang membaca dokumen ini:**
 - Jangan menulis command konkret (`npm run dev`, `npx prisma generate`, dst.) di file instruksi apa pun (`AGENTS.md`, `CLAUDE.md`, dsb.) **sebelum** proyek benar-benar di-scaffold dan command tersebut bisa diverifikasi ada di `package.json`/lockfile repo.
