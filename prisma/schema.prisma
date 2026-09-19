@@ -141,7 +141,7 @@ model Attendance {
   store      Store  @relation(fields: [storeId], references: [id])
   storeId    String
 
-  tanggalShift DateTime
+  tanggalShift DateTime @db.Date
   shiftMulai   DateTime
   shiftSelesai DateTime
   absenWaktu   DateTime
