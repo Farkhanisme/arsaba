@@ -8,8 +8,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
@@ -50,12 +50,12 @@ enum StatusVerifikasi {
 // Satu model untuk semua peran: Direktur, Manajer, Supervisor, Admin, Kepala Toko, Karyawan.
 
 model User {
-  id                  String               @id @default(cuid())
-  nama                String
-  email               String?              @unique
-  emailVerified       DateTime?
-  hashedPassword      String?              // nullable: migrasi data lama belum punya password, Admin set saat aktivasi
-  image               String?
+  id             String    @id @default(cuid())
+  nama           String
+  email          String?   @unique
+  emailVerified  DateTime?
+  hashedPassword String? // nullable: migrasi data lama belum punya password, Admin set saat aktivasi
+  image          String?
 
   role                Role                 @default(KARYAWAN)
   status              StatusKaryawan       @default(AKTIF)
@@ -63,32 +63,32 @@ model User {
   tanggalMasuk        DateTime?
 
   // --- Data pribadi (PII) — akses baca/tulis dibatasi Admin & Manajer saja di level aplikasi (§3, §11) ---
-  nik                 String?              @unique
-  tempatLahir         String?
-  tanggalLahir        DateTime?
-  alamat              String?
-  kontakDarurat       String?
+  nik           String?   @unique
+  tempatLahir   String?
+  tanggalLahir  DateTime?
+  alamat        String?
+  kontakDarurat String?
 
   // Penempatan toko saat ini (nullable untuk Direktur yang tidak terikat satu toko)
-  storeId             String?
-  store               Store?               @relation("StoreEmployees", fields: [storeId], references: [id])
+  storeId String?
+  store   Store?  @relation("StoreEmployees", fields: [storeId], references: [id])
 
   // --- Relasi ---
-  attendances         Attendance[]         @relation("EmployeeAttendances")
-  verifiedAttendances Attendance[]         @relation("VerifierAttendances")
+  attendances         Attendance[] @relation("EmployeeAttendances")
+  verifiedAttendances Attendance[] @relation("VerifierAttendances")
 
-  agendasCreated      Agenda[]             @relation("AgendaCreator")
-  agendasVerified     Agenda[]             @relation("AgendaVerifier")
-  agendasTargeted     Agenda[]             @relation("AgendaTarget")
+  agendasCreated  Agenda[] @relation("AgendaCreator")
+  agendasVerified Agenda[] @relation("AgendaVerifier")
+  agendasTargeted Agenda[] @relation("AgendaTarget")
 
-  riwayatPenempatan   RiwayatPenempatan[]  @relation("RiwayatEmployee")
-  auditLogs           AuditLog[]           @relation("AuditActor")
+  riwayatPenempatan RiwayatPenempatan[] @relation("RiwayatEmployee")
+  auditLogs         AuditLog[]          @relation("AuditActor")
 
-  gajiPokok           GajiPokok?
-  payrolls            Payroll[]
+  gajiPokok GajiPokok?
+  payrolls  Payroll[]
 
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([role])
   @@index([storeId])
@@ -98,36 +98,36 @@ model User {
 // ============ TOKO ============
 
 model Store {
-  id           String   @id @default(cuid())
-  nama         String
+  id    String  @id @default(cuid())
+  nama  String
   // Alias nama lama, lihat §4.1/§4.3: "DAPUR RUMAH" → "Dapur Produksi", "ARSABA DIENG" → "Counter Dieng"
-  alias        String?
-  aktif        Boolean  @default(true)
+  alias String?
+  aktif Boolean @default(true)
 
-  employees    User[]              @relation("StoreEmployees")
+  employees    User[]        @relation("StoreEmployees")
   attendances  Attendance[]
   agendas      Agenda[]
   salesRecords SalesRecord[]
 
-  riwayatDari  RiwayatPenempatan[] @relation("RiwayatDariToko")
-  riwayatKe    RiwayatPenempatan[] @relation("RiwayatKeToko")
+  riwayatDari RiwayatPenempatan[] @relation("RiwayatDariToko")
+  riwayatKe   RiwayatPenempatan[] @relation("RiwayatKeToko")
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // Riwayat mutasi/resign karyawan — jangan pernah hard-delete karyawan (§8)
 model RiwayatPenempatan {
-  id                 String    @id @default(cuid())
-  employee           User      @relation("RiwayatEmployee", fields: [employeeId], references: [id])
+  id                 String   @id @default(cuid())
+  employee           User     @relation("RiwayatEmployee", fields: [employeeId], references: [id])
   employeeId         String
-  dariToko           Store?    @relation("RiwayatDariToko", fields: [dariTokoId], references: [id])
+  dariToko           Store?   @relation("RiwayatDariToko", fields: [dariTokoId], references: [id])
   dariTokoId         String?
-  keToko             Store     @relation("RiwayatKeToko", fields: [keTokoId], references: [id])
+  keToko             Store    @relation("RiwayatKeToko", fields: [keTokoId], references: [id])
   keTokoId           String
-  tanggalPerpindahan DateTime  @default(now())
+  tanggalPerpindahan DateTime @default(now())
   alasan             String?
-  createdAt          DateTime  @default(now())
+  createdAt          DateTime @default(now())
 
   @@index([employeeId])
 }
@@ -135,11 +135,11 @@ model RiwayatPenempatan {
 // ============ ABSENSI ============
 
 model Attendance {
-  id           String            @id @default(cuid())
-  employee     User              @relation("EmployeeAttendances", fields: [employeeId], references: [id])
-  employeeId   String
-  store        Store             @relation(fields: [storeId], references: [id])
-  storeId      String
+  id         String @id @default(cuid())
+  employee   User   @relation("EmployeeAttendances", fields: [employeeId], references: [id])
+  employeeId String
+  store      Store  @relation(fields: [storeId], references: [id])
+  storeId    String
 
   tanggalShift DateTime
   shiftMulai   DateTime
@@ -147,20 +147,20 @@ model Attendance {
   absenWaktu   DateTime
 
   // Hitung otomatis di server — §5.1: toleransi 5 menit, potongan Rp1.000/menit setelahnya
-  menitTelat   Int               @default(0)
-  potongan     Int               @default(0)
+  menitTelat Int @default(0)
+  potongan   Int @default(0)
 
-  fotoFileId   String // Telegram file_id — JANGAN simpan URL getFile yang sementara (§10)
-  latitude     Float? // geolokasi hanya informasi pembantu verifikator (§5.1), tidak memblokir absen
-  longitude    Float?
+  fotoFileId String // Telegram file_id — JANGAN simpan URL getFile yang sementara (§10)
+  latitude   Float? // geolokasi hanya informasi pembantu verifikator (§5.1), tidak memblokir absen
+  longitude  Float?
 
-  status       StatusVerifikasi  @default(PENDING_VERIFIKASI)
-  verifiedBy   User?             @relation("VerifierAttendances", fields: [verifiedById], references: [id])
+  status       StatusVerifikasi @default(PENDING_VERIFIKASI)
+  verifiedBy   User?            @relation("VerifierAttendances", fields: [verifiedById], references: [id])
   verifiedById String?
   verifiedAt   DateTime?
 
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([employeeId])
   @@index([storeId])
@@ -171,28 +171,28 @@ model Attendance {
 // Dua sumber (§6): template_pusat (dibuat Manajer/Supervisor/Admin) & mandiri_karyawan (laporan sendiri).
 
 model Agenda {
-  id               String            @id @default(cuid())
-  judul            String
-  deskripsi        String?
-  nominal          Int // bonus per agenda, diatur Manajer (§6)
-  sumber           SumberAgenda
+  id        String       @id @default(cuid())
+  judul     String
+  deskripsi String?
+  nominal   Int // bonus per agenda, diatur Manajer (§6)
+  sumber    SumberAgenda
 
   // Target opsional: agenda bisa berlaku umum, ke toko tertentu, atau ke karyawan tertentu (§6)
-  targetStore      Store?            @relation(fields: [targetStoreId], references: [id])
+  targetStore      Store?  @relation(fields: [targetStoreId], references: [id])
   targetStoreId    String?
-  targetEmployee   User?             @relation("AgendaTarget", fields: [targetEmployeeId], references: [id])
+  targetEmployee   User?   @relation("AgendaTarget", fields: [targetEmployeeId], references: [id])
   targetEmployeeId String?
 
-  createdBy        User              @relation("AgendaCreator", fields: [createdById], references: [id])
-  createdById      String
+  createdBy   User   @relation("AgendaCreator", fields: [createdById], references: [id])
+  createdById String
 
-  status           StatusVerifikasi  @default(PENDING_VERIFIKASI)
-  verifiedBy       User?             @relation("AgendaVerifier", fields: [verifiedById], references: [id])
-  verifiedById     String?
-  verifiedAt       DateTime?
+  status       StatusVerifikasi @default(PENDING_VERIFIKASI)
+  verifiedBy   User?            @relation("AgendaVerifier", fields: [verifiedById], references: [id])
+  verifiedById String?
+  verifiedAt   DateTime?
 
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([sumber])
   @@index([status])
@@ -214,28 +214,28 @@ model GajiPokok {
 // Satu record per karyawan per bulan — dipakai untuk tipe HARIAN maupun BULANAN,
 // bedanya hanya cara `totalGaji` dihitung di level aplikasi (§7.1).
 model Payroll {
-  id                      String    @id @default(cuid())
-  employee                User      @relation(fields: [employeeId], references: [id])
-  employeeId              String
-  periode                 DateTime // tanggal 1 di bulan terkait, contoh: 2026-09-01
+  id         String   @id @default(cuid())
+  employee   User     @relation(fields: [employeeId], references: [id])
+  employeeId String
+  periode    DateTime // tanggal 1 di bulan terkait, contoh: 2026-09-01
 
   gajiPokok               Int
-  totalHariKerja          Int?     // relevan untuk tipe HARIAN
-  totalBonusAgenda        Int       @default(0) // dari agenda terverifikasi (§6)
-  totalPotonganTelat      Int       @default(0) // dari akumulasi Attendance.potongan (§5.1)
-  bonusManual             Int       @default(0) // input manual Manajer (§7.1)
-  potonganManual          Int       @default(0) // input manual Manajer (§7.1)
-  bonusPerforma           Int       @default(0) // manual sepenuhnya, TIDAK dihitung otomatis (§7.1)
+  totalHariKerja          Int? // relevan untuk tipe HARIAN
+  totalBonusAgenda        Int     @default(0) // dari agenda terverifikasi (§6)
+  totalPotonganTelat      Int     @default(0) // dari akumulasi Attendance.potongan (§5.1)
+  bonusManual             Int     @default(0) // input manual Manajer (§7.1)
+  potonganManual          Int     @default(0) // input manual Manajer (§7.1)
+  bonusPerforma           Int     @default(0) // manual sepenuhnya, TIDAK dihitung otomatis (§7.1)
   keteranganBonusPerforma String?
 
-  totalGaji               Int // hasil akhir setelah semua komponen di atas dijumlah/dikurangi
+  totalGaji Int // hasil akhir setelah semua komponen di atas dijumlah/dikurangi
 
-  status                  String    @default("DRAFT") // DRAFT | LOCKED
-  lockedAt                DateTime?
-  lockedById              String?
+  status     String    @default("DRAFT") // DRAFT | LOCKED
+  lockedAt   DateTime?
+  lockedById String?
 
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([employeeId, periode])
   @@index([periode])
@@ -274,7 +274,7 @@ model SalesRecord {
   sumberData String   @default("manual") // "manual" | "sinkron_epos" (§4.2.1)
   data       Json // struktur field mengikuti modul, lihat §4.2.1–§4.2.7
 
-  createdAt  DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([storeId, tanggal])
   @@index([modul])
