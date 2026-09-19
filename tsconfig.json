@@ -4,9 +4,12 @@
     // File Layout
     // "rootDir": "./src",
     // "outDir": "./dist",
+    "paths": {
+      "@/*": ["./*"]
+    },
     // Environment Settings
     // See also https://aka.ms/tsconfig/module
-    "module": "nodenext",
+    "module": "esnext",
     "target": "esnext",
     "types": [],
     // For nodejs:
@@ -15,11 +18,9 @@
     // and npm install -D @types/node
     // Other Outputs
     "sourceMap": true,
-    "declaration": true,
-    "declarationMap": true,
     // Stricter Typechecking Options
     "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
+    // "exactOptionalPropertyTypes": true, // disabled for shadcn/ui compatibility
     // Style Options
     // "noImplicitReturns": true,
     // "noImplicitOverride": true,
