@@ -30,7 +30,7 @@ Jangan pilih layanan berbayar meskipun "trial gratis" — pilih yang free-tier p
 | ORM | **Prisma** (keputusan final, lihat §2.2) | Migrasi skema lebih aman, tipe otomatis |
 | Autentikasi & RBAC | Auth.js (NextAuth) dengan role di session/JWT | RBAC **wajib dicek di server** (API route/middleware), jangan hanya di UI |
 | Ekspor laporan | Google Sheets API (googleapis), satu arah dari DB → Sheets | Supaya tim tetap bisa buka Excel yang familiar |
-| Bot foto absensi & notifikasi | Telegram Bot API (grammy atau node-telegram-bot-api), webhook di Vercel serverless function | Simpan `file_id` Telegram di database (tidak expired), jangan simpan URL `getFile` (expired cepat) |
+| Penyimpanan gambar | Telegram Bot API (via `lib/telegram.ts`, dipanggil langsung dari API route — bukan webhook, lihat §10) | Server unggah gambar ke chat penyimpanan privat via `sendPhoto`, simpan `file_id` di database (tidak expired), jangan simpan URL `getFile` (expired cepat) |
 | Push notification | OneSignal (free tier, hingga 10.000 subscriber) | Satu SDK untuk web + Capacitor (mobile) + webview Tauri (desktop), dashboard siap pakai |
 | Scheduler | Vercel Cron Jobs | Untuk reminder absen, reminder verifikasi tertunda, generate shift otomatis |
 | Mobile | Capacitor.js membungkus aplikasi web yang sama | Jangan buat codebase terpisah |
@@ -56,7 +56,6 @@ Supaya setiap sesi vibe-coding (model apa pun yang dipakai) tidak menebak ulang 
 | Auth | **Auth.js (NextAuth)** |
 | Push notification | **OneSignal (free tier)** |
 | Struktur folder | Mengikuti konvensi default Next.js App Router (`app/`, `lib/`, `prisma/`) — jangan buat struktur custom di luar itu tanpa alasan kuat |
-| UI Kit | Tailwind CSS + shadcn/ui |
 
 **Aturan untuk AI/agent yang membaca dokumen ini:**
 - Jangan menulis command konkret (`npm run dev`, `npx prisma generate`, dst.) di file instruksi apa pun (`AGENTS.md`, `CLAUDE.md`, dsb.) **sebelum** proyek benar-benar di-scaffold dan command tersebut bisa diverifikasi ada di `package.json`/lockfile repo.
@@ -193,18 +192,18 @@ Berdasarkan file data karyawan yang diberikan client, field minimal untuk profil
 
 ### 4.4 Alur & Format Pengiriman Laporan Penjualan
 
-**Keputusan penting**: laporan penjualan dikirim lewat **form di aplikasi** (web/mobile), **bukan** lewat chat teks bot Telegram. Bot Telegram tetap dipakai untuk foto absensi dan notifikasi/reminder (§10), tapi tidak untuk input angka laporan penjualan — field numerik yang saling terhubung (kas awal/masuk/keluar/akhir, selisih, dst.) rawan salah kalau diketik bebas di chat dan sulit divalidasi sebelum tersimpan. Form aplikasi bisa mencegah kesalahan ini sejak input (field wajib, validasi angka, kalkulasi otomatis langsung terlihat).
+**Keputusan penting**: laporan penjualan diinput lewat **form di aplikasi** (web/mobile), **bukan** lewat chat teks ke bot Telegram. Bot Telegram tidak pernah dipakai untuk interaksi langsung dengan karyawan sama sekali (lihat §10) — perannya murni sebagai backend penyimpanan gambar. Input angka laporan penjualan lewat chat teks bebas juga rawan salah — field numerik yang saling terhubung (kas awal/masuk/keluar/akhir, selisih, dst.) sulit divalidasi kalau diketik bebas. Form aplikasi bisa mencegah kesalahan ini sejak input (field wajib, validasi angka, kalkulasi otomatis langsung terlihat).
 
 **Alur pengiriman (berlaku untuk semua toko & modul):**
 1. Kepala Toko (atau karyawan yang ditugaskan) membuka form di akhir shift/hari. Toko otomatis terisi sesuai penempatannya, dan field yang muncul otomatis menyesuaikan modul usaha yang aktif di toko itu (§4.2) — bisa lebih dari satu modul sekaligus per toko.
 2. Isi field sesuai modul (lihat tabel per modul di bawah). Field turunan (selisih kas, total omset, dsb.) dihitung otomatis di sisi aplikasi begitu field mentah diisi, supaya kesalahan ketahuan sebelum submit — **tapi tetap dihitung ulang di server saat submit**, jangan percaya angka turunan dari client (§11.2).
-3. **Setiap laporan punya opsi upload foto bukti** (nota, struk, hasil cek fisik kas/tangki, dsb.) — opsional per submission, tidak wajib, tapi sangat dianjurkan terutama untuk modul dengan nilai besar (Bensin, Brilink) atau saat ada selisih kas. Foto diunggah lewat form aplikasi (bukan lewat bot Telegram terpisah) dan disimpan sebagai lampiran pada record laporan yang sama — foto absensi dan foto bukti laporan penjualan adalah dua alur berbeda meski keduanya berupa gambar.
+3. **Setiap laporan punya opsi upload foto bukti** (nota, struk, hasil cek fisik kas/tangki, dsb.) — opsional per submission, tidak wajib, tapi sangat dianjurkan terutama untuk modul dengan nilai besar (Bensin, Brilink) atau saat ada selisih kas. Foto diunggah lewat form aplikasi, lalu diteruskan server ke Telegram sebagai backend penyimpanan (§10) dan disimpan sebagai lampiran pada record laporan yang sama — foto absensi dan foto bukti laporan penjualan adalah dua record berbeda meski keduanya memakai mekanisme penyimpanan yang sama.
 4. Submit → status `pending_verifikasi`. Sistem mengirim notifikasi push (OneSignal) ke Admin/Supervisor bahwa ada laporan baru menunggu verifikasi.
 5. Admin/Supervisor mengecek kewajaran angka (bisa dibandingkan dengan foto bukti yang dilampirkan) sebelum batas waktu SLA (akhir hari itu / akhir jam kerja mereka, sesuai §6).
 6. **Disetujui** → laporan terverifikasi, masuk ke rekap harian/bulanan toko, dipakai untuk dashboard, dan nantinya diekspor satu arah ke Google Sheets (§2.1).
 7. **Ditolak** → Kepala Toko mendapat notifikasi dan bisa mengajukan ulang sebagai laporan baru; laporan yang ditolak tetap tersimpan di riwayat, tidak ditimpa (pola sama seperti agenda, §6).
 
-**Penyimpanan foto bukti**: sama seperti foto absensi, foto lampiran laporan disimpan dengan mengacu ke identifier file dari penyedia penyimpanan yang dipakai (bukan URL sementara) — jika diunggah lewat form web/mobile langsung ke storage aplikasi, pastikan link yang disimpan bersifat permanen; jika alur upload ternyata tetap lewat Telegram (misal untuk kemudahan kepala toko yang lebih terbiasa kirim foto di chat), maka berlaku aturan yang sama seperti §10 (simpan `file_id`, jangan simpan URL `getFile` yang sementara).
+**Penyimpanan foto bukti**: sama seperti foto absensi, foto lampiran laporan diunggah lewat form aplikasi lalu diteruskan server ke Telegram sebagai backend penyimpanan — simpan `file_id` yang dikembalikan Telegram, jangan simpan URL `getFile` yang sementara (§10).
 
 **Format field per modul:**
 
@@ -272,7 +271,7 @@ Berdasarkan file data karyawan yang diberikan client, field minimal untuk profil
 ### 5.1 Absensi
 - Karyawan (Supervisor ke bawah, termasuk Kepala Toko) absen lewat foto + geolokasi.
 - Geolokasi **hanya informasi pembantu** bagi verifikator — bukan syarat mutlak/blocking. Karyawan tetap bisa absen dari lokasi mana pun; sistem hanya menampilkan jarak dari toko sebagai referensi saat admin/supervisor memverifikasi.
-- Foto dikirim lewat Bot Telegram (simpan `file_id`, bukan URL sementara).
+- Foto diunggah lewat form di aplikasi, lalu diteruskan server ke Telegram sebagai backend penyimpanan (§10) — disimpan `file_id`, bukan URL sementara.
 - Toleransi keterlambatan: **5 menit** dari jam mulai shift.
 - Potongan keterlambatan: **Rp1.000 per menit** setelah toleransi terlampaui, berlaku untuk **semua karyawan tanpa kecuali**. Dihitung otomatis: `menit_telat = max(0, waktu_absen - jam_mulai_shift - 5 menit); potongan = menit_telat × 1000`.
 
@@ -345,12 +344,17 @@ Berdasarkan file data karyawan yang diberikan client, field minimal untuk profil
 
 ---
 
-## 10. Alur Bot Telegram
+## 10. Telegram Sebagai Media Penyimpanan Gambar
 
-1. Karyawan mengirim foto absensi (+ opsional lokasi) ke bot.
-2. Bot menyimpan `file_id` foto dan menyimpan record absensi berstatus `pending_verifikasi` ke database (via API internal, bukan langsung tulis ke Sheets).
-3. Bot membalas konfirmasi ke karyawan bahwa absensi diterima dan menunggu verifikasi.
-4. Saat kepala toko/admin butuh menampilkan foto (di dashboard web), backend memanggil Telegram `getFile` dengan `file_id` yang tersimpan untuk mendapatkan link sementara, lalu tampilkan — **jangan simpan link sementara ini**, ambil ulang tiap kali dibutuhkan.
+**Klarifikasi penting (dikonfirmasi pemilik proyek)**: karyawan **tidak pernah** berinteraksi langsung dengan bot Telegram (tidak chat, tidak kirim foto ke bot secara manual). Semua upload foto — foto absensi (§5.1) **maupun** foto bukti laporan penjualan (§4.4), dan fitur upload gambar lain yang mungkin ditambahkan di masa depan — dilakukan lewat **form di aplikasi** (web/mobile). Telegram murni dipakai sebagai **backend penyimpanan gambar gratis**, bukan sebagai antarmuka percakapan dengan pengguna.
+
+**Alur teknis:**
+1. Karyawan/kepala toko mengunggah foto lewat form di aplikasi (misal form absensi atau form laporan penjualan).
+2. API route Next.js yang menerima upload tersebut memanggil fungsi utilitas server-side (`lib/telegram.ts`) yang menggunakan Telegram Bot API method `sendPhoto` (atau `sendDocument` jika ingin kualitas penuh tanpa kompresi otomatis Telegram) untuk mengunggah gambar ke satu **chat/grup privat khusus penyimpanan** — sebuah grup Telegram tempat bot ini dijadikan admin, dibuat khusus untuk keperluan ini (bukan chat personal siapa pun).
+3. Telegram membalas dengan `file_id` di response API — **inilah yang disimpan ke database** terkait record yang bersangkutan (absensi atau laporan penjualan), bukan URL sementara dari `getFile`.
+4. Saat gambar perlu ditampilkan kembali di dashboard, server memanggil Telegram `getFile` dengan `file_id` yang tersimpan untuk mendapatkan link sementara — **jangan pernah simpan/cache link sementara ini**, ambil ulang setiap kali dibutuhkan.
+5. **Tidak diperlukan webhook masuk dari Telegram** untuk alur ini — semua komunikasi ke Telegram bersifat satu arah (aplikasi memanggil API Telegram), karena tidak ada interaksi chat dua arah dengan pengguna. Logic ini cukup berupa fungsi utilitas biasa di dalam Next.js (`lib/telegram.ts`), dipanggil dari API route mana pun yang menangani upload gambar — bukan proses/service terpisah.
+6. Env var yang dibutuhkan: `TELEGRAM_BOT_TOKEN` (didapat dari BotFather) dan `TELEGRAM_STORAGE_CHAT_ID` (id grup/channel privat tempat bot mengunggah semua gambar).
 
 ---
 
