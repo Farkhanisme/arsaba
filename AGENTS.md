@@ -10,6 +10,11 @@
 - `npm run start` — start production build (`next start`). Script tersedia di package.json.
 - `npm run lint` — run linter (`next lint`). Script tersedia di package.json.
 - `npx prisma generate` — generate Prisma client. Harus ditempatkan setelah schema.model terdefinisi.
+- `npx tsx <file>.ts` — jalankan script TypeScript standalone (di luar Next.js). **WAJIB** pakai `--env-file=.env` agar environment variables dari `.env` terbaca, karena Next.js otomatis load `.env` tapi `tsx` standalone tidak.
+
+## Menjalankan script mandiri
+- Script di folder `scripts/` atau ad-hoc `npx tsx <file>.ts` **harus** pakai flag `--env-file=.env` agar environment variables dari `.env` terbaca. Next.js otomatis load `.env` tapi `tsx` standalone tidak.
+  Contoh: `npx tsx --env-file=.env scripts/test-telegram.ts`
 
 ## Stack & Architecture
 

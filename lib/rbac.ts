@@ -1,4 +1,4 @@
-import { Session } from "next-auth";
+import type { Session } from "next-auth";
 import { Role } from "@prisma/client";
 
 export function requireRole(session: Session | null, allowedRoles: Role[]): void {
