@@ -80,6 +80,10 @@ export async function PATCH(
     }
 
     const now = new Date();
+    const totalMenitKerja = Math.max(
+      0,
+      Math.floor((absenKeluar.getTime() - attendance.absenMasuk.getTime()) / 60000)
+    );
 
     const updated = await prisma.attendance.update({
       where: { id },
@@ -87,6 +91,7 @@ export async function PATCH(
         absenKeluar,
         fotoKeluarDiambilPada: now,
         statusKeluar: "DIVERIFIKASI",
+        totalMenitKerja,
         logs: {
           create: {
             jenis: "KELUAR",
@@ -106,6 +111,7 @@ export async function PATCH(
       id: updated.id,
       statusMasuk: updated.statusMasuk,
       statusKeluar: updated.statusKeluar,
+      totalMenitKerja: updated.totalMenitKerja,
       absenMasuk: updated.absenMasuk.toISOString(),
       absenKeluar: updated.absenKeluar ? updated.absenKeluar.toISOString() : null,
       fotoKeluarDiambilPada: updated.fotoKeluarDiambilPada
