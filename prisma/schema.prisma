@@ -33,6 +33,7 @@ enum StatusKaryawan {
 enum TipePerhitunganGaji {
   HARIAN
   BULANAN
+  JAM
 }
 
 enum SumberAgenda {
@@ -51,6 +52,21 @@ enum JenisAbsen {
   KELUAR
 }
 
+enum StatusJadwal {
+  DRAFT
+  APPROVED
+}
+
+enum SumberJadwal {
+  AUTO
+  MANUAL
+}
+
+enum SegmenShift {
+  NORMAL
+  PAM
+}
+
 // ============ USER / KARYAWAN ============
 // Satu model untuk semua peran: Direktur, Manajer, Supervisor, Admin, Kepala Toko, Karyawan.
 
@@ -65,6 +81,7 @@ model User {
   role                Role                 @default(KARYAWAN)
   status              StatusKaryawan       @default(AKTIF)
   tipePerhitunganGaji TipePerhitunganGaji?
+  tarifPerJam          Int?
   tanggalMasuk        DateTime?
 
   // --- Data pribadi (PII) — akses baca/tulis dibatasi Admin & Manajer saja di level aplikasi (§3, §11) ---
@@ -81,6 +98,11 @@ model User {
   // --- Relasi ---
   attendances         Attendance[] @relation("EmployeeAttendances")
   verifiedLogs AttendanceLog[] @relation("VerifierLogs")
+
+  shiftInstancesCreated   ShiftInstance[]   @relation("JadwalCreator")
+  shiftInstancesApproved  ShiftInstance[]   @relation("JadwalApprover")
+  shiftAssignments        ShiftAssignment[] @relation("EmployeeShifts")
+  shiftAssignmentsCreated ShiftAssignment[] @relation("AssignmentCreator")
 
   agendasCreated  Agenda[] @relation("AgendaCreator")
   agendasVerified Agenda[] @relation("AgendaVerifier")
@@ -116,6 +138,9 @@ model Store {
 
   riwayatDari RiwayatPenempatan[] @relation("RiwayatDariToko")
   riwayatKe   RiwayatPenempatan[] @relation("RiwayatKeToko")
+
+  shiftTemplates ShiftTemplate[]
+  shiftInstances ShiftInstance[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -170,6 +195,7 @@ model Attendance {
   // Auto-close untuk shift yang tidak check-out
   autoClosed   Boolean   @default(false)
   autoClosedAt DateTime?
+  totalMenitKerja Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -215,6 +241,75 @@ model AttendanceLog {
   @@index([attendanceId])
   @@index([jenis])
   @@index([status])
+}
+
+model ShiftTemplate {
+  id             String   @id @default(cuid())
+  store          Store    @relation(fields: [storeId], references: [id])
+  storeId        String
+  nama           String
+  jamMulaiMenit  Int
+  jamSelesaiMenit Int
+  lintasHari     Boolean  @default(false)
+  aktif          Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  instances ShiftInstance[]
+
+  @@unique([storeId, nama])
+  @@index([storeId])
+}
+
+model ShiftInstance {
+  id           String         @id @default(cuid())
+  store        Store          @relation(fields: [storeId], references: [id])
+  storeId      String
+  template     ShiftTemplate? @relation(fields: [templateId], references: [id])
+  templateId   String?
+  tanggal      DateTime       @db.Date
+  jamMulai     DateTime
+  jamSelesai   DateTime
+  statusJadwal StatusJadwal   @default(DRAFT)
+  sumberJadwal SumberJadwal
+  catatan      String?
+
+  createdBy    User           @relation("JadwalCreator", fields: [createdById], references: [id])
+  createdById  String
+  approvedBy   User?          @relation("JadwalApprover", fields: [approvedById], references: [id])
+  approvedById String?
+  approvedAt   DateTime?
+
+  assignments ShiftAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([storeId, tanggal])
+  @@index([statusJadwal])
+}
+
+model ShiftAssignment {
+  id                  String        @id @default(cuid())
+  shiftInstance       ShiftInstance @relation(fields: [shiftInstanceId], references: [id], onDelete: Cascade)
+  shiftInstanceId     String
+  employee            User          @relation("EmployeeShifts", fields: [employeeId], references: [id])
+  employeeId          String
+  segmen              SegmenShift   @default(NORMAL)
+  jamMulai            DateTime
+  jamSelesai          DateTime
+  pamDariAssignmentId String?
+  pamKeterangan       String?
+
+  createdBy   User   @relation("AssignmentCreator", fields: [createdById], references: [id])
+  createdById String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shiftInstanceId])
+  @@index([employeeId])
+  @@index([segmen])
 }
 
 // ============ AGENDA & BONUS ============
