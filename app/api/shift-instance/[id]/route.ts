@@ -96,3 +96,114 @@ export async function GET(
     );
   }
 }
+
+// PATCH /api/shift-instance/[id] — approve
+// Body: { action: "approve" }
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    }
+    if (!ALLOWED_ROLES.includes(session.user.role)) {
+      return NextResponse.json(
+        { error: "Role Anda tidak berwenang mengubah jadwal." },
+        { status: 403 }
+      );
+    }
+
+    const { id } = await params;
+
+    let body: Record<string, unknown>;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Body JSON tidak valid" }, { status: 400 });
+    }
+
+    const action = body.action;
+    if (action !== "approve") {
+      return NextResponse.json(
+        { error: "Field 'action' harus 'approve'" },
+        { status: 400 }
+      );
+    }
+
+    const existing = await prisma.shiftInstance.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "Jadwal tidak ditemukan." }, { status: 404 });
+    }
+    if (existing.statusJadwal === "APPROVED") {
+      return NextResponse.json(
+        { error: "Jadwal ini sudah APPROVED." },
+        { status: 409 }
+      );
+    }
+
+    const now = new Date();
+    const updated = await prisma.shiftInstance.update({
+      where: { id },
+      data: {
+        statusJadwal: "APPROVED",
+        approvedById: session.user.id,
+        approvedAt: now,
+      },
+    });
+
+    return NextResponse.json({
+      id: updated.id,
+      statusJadwal: updated.statusJadwal,
+      approvedById: updated.approvedById,
+      approvedAt: updated.approvedAt ? updated.approvedAt.toISOString() : null,
+    });
+  } catch (err) {
+    console.error("PATCH /api/shift-instance/[id] error:", err);
+    return NextResponse.json(
+      { error: "Gagal approve jadwal." },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/shift-instance/[id] — hanya DRAFT, CASCADE hapus assignment
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    }
+    if (!ALLOWED_ROLES.includes(session.user.role)) {
+      return NextResponse.json(
+        { error: "Role Anda tidak berwenang menghapus jadwal." },
+        { status: 403 }
+      );
+    }
+
+    const { id } = await params;
+    const existing = await prisma.shiftInstance.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "Jadwal tidak ditemukan." }, { status: 404 });
+    }
+    if (existing.statusJadwal === "APPROVED") {
+      return NextResponse.json(
+        { error: "Jadwal APPROVED tidak bisa dihapus." },
+        { status: 409 }
+      );
+    }
+
+    await prisma.shiftInstance.delete({ where: { id } });
+    return NextResponse.json({ deleted: true, id });
+  } catch (err) {
+    console.error("DELETE /api/shift-instance/[id] error:", err);
+    return NextResponse.json(
+      { error: "Gagal menghapus jadwal." },
+      { status: 500 }
+    );
+  }
+}
