@@ -1,18 +1,19 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { uploadToTelegram } from "@/lib/telegram";
+import {
+  cariDanHitungUntukCheckIn,
+  computeTanggalShiftWIB,
+} from "@/lib/absensi";
 import { NextRequest, NextResponse } from "next/server";
 
-const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
 const AUTO_CLOSE_MS = 20 * 60 * 60 * 1000;
-
-function computeTanggalShiftWIB(date: Date): Date {
-  const wib = new Date(date.getTime() + WIB_OFFSET_MS);
-  return new Date(Date.UTC(wib.getUTCFullYear(), wib.getUTCMonth(), wib.getUTCDate()));
-}
 
 // POST /api/absensi — CHECK-IN.
 // absenMasuk ditentukan server. Auto-close lazy untuk shift menggantung >20 jam.
+// Kalau ada ShiftAssignment yang sudah APPROVED, isi shiftMulai/shiftSelesai
+// dan hitung menitTelat/potongan. Kalau belum APPROVED atau tidak ada
+// assignment, biarkan null/0 (akan direcompute saat approve jadwal).
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
@@ -22,7 +23,10 @@ export async function POST(request: NextRequest) {
 
     if (!session.user.storeId) {
       return NextResponse.json(
-        { error: "Akun ini tidak terhubung ke toko manapun, tidak bisa mengajukan absensi" },
+        {
+          error:
+            "Akun ini tidak terhubung ke toko manapun, tidak bisa mengajukan absensi",
+        },
         { status: 400 }
       );
     }
@@ -33,16 +37,31 @@ export async function POST(request: NextRequest) {
     const longitudeStr = formData.get("longitude") as string | null;
 
     if (!foto) {
-      return NextResponse.json({ error: "Field 'foto' wajib diisi" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Field 'foto' wajib diisi" },
+        { status: 400 }
+      );
     }
 
     const latitude = latitudeStr ? Number(latitudeStr) : undefined;
     const longitude = longitudeStr ? Number(longitudeStr) : undefined;
-    if (latitude !== undefined && (Number.isNaN(latitude) || latitude < -90 || latitude > 90)) {
-      return NextResponse.json({ error: "Latitude tidak valid" }, { status: 400 });
+    if (
+      latitude !== undefined &&
+      (Number.isNaN(latitude) || latitude < -90 || latitude > 90)
+    ) {
+      return NextResponse.json(
+        { error: "Latitude tidak valid" },
+        { status: 400 }
+      );
     }
-    if (longitude !== undefined && (Number.isNaN(longitude) || longitude < -180 || longitude > 180)) {
-      return NextResponse.json({ error: "Longitude tidak valid" }, { status: 400 });
+    if (
+      longitude !== undefined &&
+      (Number.isNaN(longitude) || longitude < -180 || longitude > 180)
+    ) {
+      return NextResponse.json(
+        { error: "Longitude tidak valid" },
+        { status: 400 }
+      );
     }
 
     const now = new Date();
@@ -65,11 +84,18 @@ export async function POST(request: NextRequest) {
 
     // Cegah check-in dobel
     const existing = await prisma.attendance.findFirst({
-      where: { employeeId: session.user.id, absenKeluar: null, autoClosed: false },
+      where: {
+        employeeId: session.user.id,
+        absenKeluar: null,
+        autoClosed: false,
+      },
     });
     if (existing) {
       return NextResponse.json(
-        { error: "Anda masih dalam shift yang belum check-out. Lakukan check-out terlebih dahulu." },
+        {
+          error:
+            "Anda masih dalam shift yang belum check-out. Lakukan check-out terlebih dahulu.",
+        },
         { status: 409 }
       );
     }
@@ -77,15 +103,28 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await foto.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const filename = foto.name || `absensi-masuk-${Date.now()}.jpg`;
-    const uploadResult = await uploadToTelegram(buffer, filename, { asDocument: false });
+    const uploadResult = await uploadToTelegram(buffer, filename, {
+      asDocument: false,
+    });
+
+    const tanggalShift = computeTanggalShiftWIB(now);
+    const hitung = await cariDanHitungUntukCheckIn(
+      session.user.id,
+      now,
+      tanggalShift
+    );
 
     const attendance = await prisma.attendance.create({
       data: {
         employeeId: session.user.id,
         storeId: session.user.storeId,
-        tanggalShift: computeTanggalShiftWIB(now),
+        tanggalShift,
         absenMasuk: now,
         fotoMasukDiambilPada: now,
+        shiftMulai: hitung.shiftMulai,
+        shiftSelesai: hitung.shiftSelesai,
+        menitTelat: hitung.menitTelat,
+        potongan: hitung.potongan,
         logs: {
           create: {
             jenis: "MASUK",
@@ -105,7 +144,17 @@ export async function POST(request: NextRequest) {
       storeId: attendance.storeId,
       tanggalShift: attendance.tanggalShift.toISOString(),
       absenMasuk: attendance.absenMasuk.toISOString(),
-      absenKeluar: attendance.absenKeluar ? attendance.absenKeluar.toISOString() : null,
+      absenKeluar: attendance.absenKeluar
+        ? attendance.absenKeluar.toISOString()
+        : null,
+      shiftMulai: attendance.shiftMulai
+        ? attendance.shiftMulai.toISOString()
+        : null,
+      shiftSelesai: attendance.shiftSelesai
+        ? attendance.shiftSelesai.toISOString()
+        : null,
+      menitTelat: attendance.menitTelat,
+      potongan: attendance.potongan,
       statusMasuk: attendance.statusMasuk,
       statusKeluar: attendance.statusKeluar,
       fotoMasukDiambilPada: attendance.fotoMasukDiambilPada.toISOString(),
