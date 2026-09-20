@@ -280,6 +280,8 @@ model ShiftInstance {
   approvedById String?
   approvedAt   DateTime?
 
+  batchId     String?
+
   assignments ShiftAssignment[]
 
   createdAt DateTime @default(now())
@@ -287,6 +289,7 @@ model ShiftInstance {
 
   @@index([storeId, tanggal])
   @@index([statusJadwal])
+  @@index([batchId])
 }
 
 model ShiftAssignment {
