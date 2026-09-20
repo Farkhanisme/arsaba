@@ -4,15 +4,15 @@ import { uploadToTelegram } from "@/lib/telegram";
 import { NextRequest, NextResponse } from "next/server";
 
 const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+const AUTO_CLOSE_MS = 20 * 60 * 60 * 1000;
 
-// Konversi Date (UTC instant) ke tanggal WIB, dikembalikan sebagai Date di UTC midnight.
 function computeTanggalShiftWIB(date: Date): Date {
   const wib = new Date(date.getTime() + WIB_OFFSET_MS);
   return new Date(Date.UTC(wib.getUTCFullYear(), wib.getUTCMonth(), wib.getUTCDate()));
 }
 
-// POST /api/absensi — CHECK-IN absensi.
-// absenMasuk ditentukan server, tidak menerima timestamp dari client.
+// POST /api/absensi — CHECK-IN.
+// absenMasuk ditentukan server. Auto-close lazy untuk shift menggantung >20 jam.
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
@@ -45,9 +45,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Longitude tidak valid" }, { status: 400 });
     }
 
-    // Cegah check-in dobel: tolak jika masih ada record dengan absenKeluar null
+    const now = new Date();
+
+    // Auto-close lazy: tutup shift menggantung > 20 jam
+    const batasAutoClose = new Date(now.getTime() - AUTO_CLOSE_MS);
+    await prisma.attendance.updateMany({
+      where: {
+        employeeId: session.user.id,
+        absenKeluar: null,
+        autoClosed: false,
+        absenMasuk: { lt: batasAutoClose },
+      },
+      data: {
+        autoClosed: true,
+        autoClosedAt: now,
+        statusKeluar: "PENDING_VERIFIKASI",
+      },
+    });
+
+    // Cegah check-in dobel
     const existing = await prisma.attendance.findFirst({
-      where: { employeeId: session.user.id, absenKeluar: null },
+      where: { employeeId: session.user.id, absenKeluar: null, autoClosed: false },
     });
     if (existing) {
       return NextResponse.json(
@@ -59,40 +77,48 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await foto.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const filename = foto.name || `absensi-masuk-${Date.now()}.jpg`;
-
     const uploadResult = await uploadToTelegram(buffer, filename, { asDocument: false });
-
-    const absenMasuk = new Date();
-    const tanggalShift = computeTanggalShiftWIB(absenMasuk);
 
     const attendance = await prisma.attendance.create({
       data: {
         employeeId: session.user.id,
         storeId: session.user.storeId,
-        fotoMasukFileId: uploadResult.fileId,
-        status: "PENDING_VERIFIKASI",
-        tanggalShift,
-        absenMasuk,
-        menitTelat: 0,
-        potongan: 0,
-        latitudeMasuk: latitude,
-        longitudeMasuk: longitude,
+        tanggalShift: computeTanggalShiftWIB(now),
+        absenMasuk: now,
+        fotoMasukDiambilPada: now,
+        logs: {
+          create: {
+            jenis: "MASUK",
+            fotoFileId: uploadResult.fileId,
+            latitude,
+            longitude,
+            absenServerPada: now,
+          },
+        },
       },
+      include: { logs: true },
     });
 
     return NextResponse.json({
       id: attendance.id,
       employeeId: attendance.employeeId,
       storeId: attendance.storeId,
-      fotoMasukFileId: attendance.fotoMasukFileId,
-      status: attendance.status,
       tanggalShift: attendance.tanggalShift.toISOString(),
       absenMasuk: attendance.absenMasuk.toISOString(),
       absenKeluar: attendance.absenKeluar ? attendance.absenKeluar.toISOString() : null,
-      menitTelat: attendance.menitTelat,
-      potongan: attendance.potongan,
-      latitudeMasuk: attendance.latitudeMasuk,
-      longitudeMasuk: attendance.longitudeMasuk,
+      statusMasuk: attendance.statusMasuk,
+      statusKeluar: attendance.statusKeluar,
+      fotoMasukDiambilPada: attendance.fotoMasukDiambilPada.toISOString(),
+      autoClosed: attendance.autoClosed,
+      logs: attendance.logs.map((l) => ({
+        id: l.id,
+        jenis: l.jenis,
+        fotoFileId: l.fotoFileId,
+        latitude: l.latitude,
+        longitude: l.longitude,
+        absenServerPada: l.absenServerPada.toISOString(),
+        status: l.status,
+      })),
       createdAt: attendance.createdAt.toISOString(),
     });
   } catch (err) {

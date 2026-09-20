@@ -46,6 +46,11 @@ enum StatusVerifikasi {
   DITOLAK
 }
 
+enum JenisAbsen {
+  MASUK
+  KELUAR
+}
+
 // ============ USER / KARYAWAN ============
 // Satu model untuk semua peran: Direktur, Manajer, Supervisor, Admin, Kepala Toko, Karyawan.
 
@@ -75,7 +80,7 @@ model User {
 
   // --- Relasi ---
   attendances         Attendance[] @relation("EmployeeAttendances")
-  verifiedAttendances Attendance[] @relation("VerifierAttendances")
+  verifiedLogs AttendanceLog[] @relation("VerifierLogs")
 
   agendasCreated  Agenda[] @relation("AgendaCreator")
   agendasVerified Agenda[] @relation("AgendaVerifier")
@@ -141,31 +146,74 @@ model Attendance {
   store      Store  @relation(fields: [storeId], references: [id])
   storeId    String
 
-  tanggalShift  DateTime  @db.Date
-  shiftMulai    DateTime?
-  shiftSelesai  DateTime?
-  absenMasuk    DateTime
-  absenKeluar   DateTime?
-  menitTelat    Int           @default(0)
-  potongan      Int           @default(0)
-  fotoMasukFileId   String
-  fotoKeluarFileId  String?
-  latitudeMasuk     Float?
-  longitudeMasuk    Float?
-  latitudeKeluar    Float?
-  longitudeKeluar   Float?
+  tanggalShift DateTime  @db.Date
+  shiftMulai   DateTime?
+  shiftSelesai DateTime?
 
-  status       StatusVerifikasi @default(PENDING_VERIFIKASI)
-  verifiedBy   User?            @relation("VerifierAttendances", fields: [verifiedById], references: [id])
-  verifiedById String?
-  verifiedAt   DateTime?
-  rejectedReason String?
+  // Kapan karyawan dianggap masuk/pulang (dari log pertama untuk masuk,
+  // dari log terbaru untuk keluar). Auto-close tidak mengisinya.
+  absenMasuk  DateTime
+  absenKeluar DateTime?
+
+  // Kapan foto yang dipakai diambil (bisa beda dari absenMasuk/absenKeluar
+  // kalau ada resubmit)
+  fotoMasukDiambilPada  DateTime
+  fotoKeluarDiambilPada DateTime?
+
+  menitTelat Int @default(0)
+  potongan   Int @default(0)
+
+  // Status verifikasi per bagian
+  statusMasuk  StatusVerifikasi @default(PENDING_VERIFIKASI)
+  statusKeluar StatusVerifikasi @default(PENDING_VERIFIKASI)
+
+  // Auto-close untuk shift yang tidak check-out
+  autoClosed   Boolean   @default(false)
+  autoClosedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  logs AttendanceLog[]
+
   @@index([employeeId])
   @@index([storeId])
+  @@index([statusMasuk])
+  @@index([statusKeluar])
+  @@index([autoClosed])
+}
+
+model AttendanceLog {
+  id           String     @id @default(cuid())
+  attendance   Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  attendanceId String
+
+  jenis JenisAbsen
+
+  // Foto bukti. Nullable untuk kasus admin override tanpa foto.
+  fotoFileId String?
+  latitude   Float?
+  longitude  Float?
+
+  // Waktu server — authoritative. Auto-close tidak mengisi ini.
+  absenServerPada DateTime
+
+  status       StatusVerifikasi @default(PENDING_VERIFIKASI)
+  verifiedBy   User?            @relation("VerifierLogs", fields: [verifiedById], references: [id])
+  verifiedById String?
+  verifiedAt   DateTime?
+  rejectedReason String?
+
+  // Untuk resubmit: kenapa karyawan mengirim ulang
+  keteranganKoreksi String?
+
+  // Untuk override oleh admin (mis. karyawan lupa check-out, admin isi manual)
+  isOverride Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([attendanceId])
+  @@index([jenis])
   @@index([status])
 }
 

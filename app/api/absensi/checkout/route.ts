@@ -3,9 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { uploadToTelegram } from "@/lib/telegram";
 import { NextRequest, NextResponse } from "next/server";
 
-// POST /api/absensi/checkout — CHECK-OUT absensi.
-// Mencari record check-in aktif (absenKeluar null) milik user, lalu mengisinya.
-// absenKeluar ditentukan server, tidak menerima timestamp dari client.
+// POST /api/absensi/checkout — CHECK-OUT.
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
@@ -31,9 +29,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Longitude tidak valid" }, { status: 400 });
     }
 
-    // Cari shift aktif: record milik user ini dengan absenKeluar masih null
     const existing = await prisma.attendance.findFirst({
-      where: { employeeId: session.user.id, absenKeluar: null },
+      where: { employeeId: session.user.id, absenKeluar: null, autoClosed: false },
       orderBy: { absenMasuk: "desc" },
     });
     if (!existing) {
@@ -43,39 +40,49 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const now = new Date();
     const arrayBuffer = await foto.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const filename = foto.name || `absensi-keluar-${Date.now()}.jpg`;
-
     const uploadResult = await uploadToTelegram(buffer, filename, { asDocument: false });
 
     const attendance = await prisma.attendance.update({
       where: { id: existing.id },
       data: {
-        absenKeluar: new Date(),
-        fotoKeluarFileId: uploadResult.fileId,
-        latitudeKeluar: latitude,
-        longitudeKeluar: longitude,
+        absenKeluar: now,
+        fotoKeluarDiambilPada: now,
+        statusKeluar: "PENDING_VERIFIKASI",
+        logs: {
+          create: {
+            jenis: "KELUAR",
+            fotoFileId: uploadResult.fileId,
+            latitude,
+            longitude,
+            absenServerPada: now,
+          },
+        },
       },
+      include: { logs: true },
     });
 
     return NextResponse.json({
       id: attendance.id,
       employeeId: attendance.employeeId,
       storeId: attendance.storeId,
-      fotoMasukFileId: attendance.fotoMasukFileId,
-      fotoKeluarFileId: attendance.fotoKeluarFileId,
-      status: attendance.status,
-      tanggalShift: attendance.tanggalShift.toISOString(),
       absenMasuk: attendance.absenMasuk.toISOString(),
       absenKeluar: attendance.absenKeluar ? attendance.absenKeluar.toISOString() : null,
-      menitTelat: attendance.menitTelat,
-      potongan: attendance.potongan,
-      latitudeMasuk: attendance.latitudeMasuk,
-      longitudeMasuk: attendance.longitudeMasuk,
-      latitudeKeluar: attendance.latitudeKeluar,
-      longitudeKeluar: attendance.longitudeKeluar,
-      createdAt: attendance.createdAt.toISOString(),
+      statusMasuk: attendance.statusMasuk,
+      statusKeluar: attendance.statusKeluar,
+      fotoKeluarDiambilPada: attendance.fotoKeluarDiambilPada
+        ? attendance.fotoKeluarDiambilPada.toISOString()
+        : null,
+      logs: attendance.logs.map((l) => ({
+        id: l.id,
+        jenis: l.jenis,
+        fotoFileId: l.fotoFileId,
+        absenServerPada: l.absenServerPada.toISOString(),
+        status: l.status,
+      })),
     });
   } catch (err) {
     console.error("POST /api/absensi/checkout error:", err);
