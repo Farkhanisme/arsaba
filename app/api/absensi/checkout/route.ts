@@ -41,6 +41,11 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date();
+    const totalMenitKerja = Math.max(
+      0,
+      Math.floor((now.getTime() - existing.absenMasuk.getTime()) / 60000)
+    );
+
     const arrayBuffer = await foto.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const filename = foto.name || `absensi-keluar-${Date.now()}.jpg`;
@@ -52,6 +57,7 @@ export async function POST(request: NextRequest) {
         absenKeluar: now,
         fotoKeluarDiambilPada: now,
         statusKeluar: "PENDING_VERIFIKASI",
+        totalMenitKerja,
         logs: {
           create: {
             jenis: "KELUAR",
@@ -73,6 +79,7 @@ export async function POST(request: NextRequest) {
       absenKeluar: attendance.absenKeluar ? attendance.absenKeluar.toISOString() : null,
       statusMasuk: attendance.statusMasuk,
       statusKeluar: attendance.statusKeluar,
+      totalMenitKerja: attendance.totalMenitKerja,
       fotoKeluarDiambilPada: attendance.fotoKeluarDiambilPada
         ? attendance.fotoKeluarDiambilPada.toISOString()
         : null,
