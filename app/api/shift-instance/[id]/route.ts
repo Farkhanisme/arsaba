@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { cariDanHitungUntukCheckIn } from "@/lib/absensi";
 import { NextRequest, NextResponse } from "next/server";
 
 const ALLOWED_ROLES = ["ADMIN", "MANAJER", "SUPERVISOR"];
@@ -153,11 +154,53 @@ export async function PATCH(
       },
     });
 
+    // Recompute attendances for assigned employees on this date
+    const assignments = await prisma.shiftAssignment.findMany({
+      where: { shiftInstanceId: id },
+      select: { employeeId: true },
+    });
+    const employeeIds = [...new Set(assignments.map((a) => a.employeeId))];
+
+    let recomputed = 0;
+    if (employeeIds.length > 0) {
+      const attendances = await prisma.attendance.findMany({
+        where: {
+          employeeId: { in: employeeIds },
+          tanggalShift: existing.tanggal,
+        },
+        select: {
+          id: true,
+          employeeId: true,
+          absenMasuk: true,
+          tanggalShift: true,
+        },
+      });
+
+      for (const att of attendances) {
+        const hasil = await cariDanHitungUntukCheckIn(
+          att.employeeId,
+          att.absenMasuk,
+          att.tanggalShift
+        );
+        await prisma.attendance.update({
+          where: { id: att.id },
+          data: {
+            shiftMulai: hasil.shiftMulai,
+            shiftSelesai: hasil.shiftSelesai,
+            menitTelat: hasil.menitTelat,
+            potongan: hasil.potongan,
+          },
+        });
+        recomputed++;
+      }
+    }
+
     return NextResponse.json({
       id: updated.id,
       statusJadwal: updated.statusJadwal,
       approvedById: updated.approvedById,
       approvedAt: updated.approvedAt ? updated.approvedAt.toISOString() : null,
+      recomputed,
     });
   } catch (err) {
     console.error("PATCH /api/shift-instance/[id] error:", err);
