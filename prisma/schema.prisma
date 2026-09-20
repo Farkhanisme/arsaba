@@ -159,6 +159,7 @@ model Attendance {
   verifiedBy   User?            @relation("VerifierAttendances", fields: [verifiedById], references: [id])
   verifiedById String?
   verifiedAt   DateTime?
+  rejectedReason String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
