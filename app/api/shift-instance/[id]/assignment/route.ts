@@ -136,6 +136,29 @@ export async function POST(
           approvedAt: null,
         },
       });
+
+      const semuaAssignment = await prisma.shiftAssignment.findMany({
+        where: { shiftInstanceId: id },
+        select: { employeeId: true },
+      });
+      const employeeIdsReset = [
+        ...new Set(semuaAssignment.map((a) => a.employeeId)),
+      ];
+      if (employeeIdsReset.length > 0) {
+        await prisma.attendance.updateMany({
+          where: {
+            employeeId: { in: employeeIdsReset },
+            tanggalShift: instance.tanggal,
+          },
+          data: {
+            shiftMulai: null,
+            shiftSelesai: null,
+            menitTelat: 0,
+            potongan: 0,
+          },
+        });
+      }
+
       statusInstance = "DRAFT";
     }
 
