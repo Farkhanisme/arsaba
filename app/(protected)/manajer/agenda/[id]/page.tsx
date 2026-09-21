@@ -4,6 +4,7 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AssignForm } from "@/components/agenda/assign-form";
+import { NominalTemplateForm } from "@/components/agenda/nominal-template-form";
 import type { Role } from "@prisma/client";
 
 const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
@@ -110,6 +111,18 @@ export default async function DetailTemplatePage({
 </p>
           <p>Deadline: {formatTanggalWIB(template.deadline)}</p>
           <p>Status: {template.status}</p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Nominal Template</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <NominalTemplateForm
+            templateId={template.id}
+            nominalSaatIni={template.nominal}
+          />
         </CardContent>
       </Card>
 
