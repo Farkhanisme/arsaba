@@ -272,22 +272,52 @@ Berdasarkan file data karyawan yang diberikan client, field minimal untuk profil
 - Karyawan (Supervisor ke bawah, termasuk Kepala Toko) absen lewat foto + geolokasi.
 - Geolokasi **hanya informasi pembantu** bagi verifikator — bukan syarat mutlak/blocking. Karyawan tetap bisa absen dari lokasi mana pun; sistem hanya menampilkan jarak dari toko sebagai referensi saat admin/supervisor memverifikasi.
 - Foto diunggah lewat form di aplikasi, lalu diteruskan server ke Telegram sebagai backend penyimpanan (§10) — disimpan `file_id`, bukan URL sementara.
-- Toleransi keterlambatan: **5 menit** dari jam mulai shift.
-- Potongan keterlambatan: **Rp1.000 per menit** setelah toleransi terlampaui, berlaku untuk **semua karyawan tanpa kecuali**. Dihitung otomatis: `menit_telat = max(0, waktu_absen - jam_mulai_shift - 5 menit); potongan = menit_telat × 1000`.
+- **Sistem tidak mencocokkan absensi dengan jadwal shift secara otomatis.** Tugas mencocokkan ada di Admin/Supervisor saat verifikasi. Yang dicatat sistem:
+  - `absenMasuk` — timestamp asli saat karyawan check-in.
+  - `absenKeluar` — timestamp asli saat karyawan check-out.
+  - `totalMenitKerja` — dihitung otomatis: `floor((absenKeluar − absenMasuk) / 60000)`, minimum 0.
+  - `fotoMasukDiambilPada` / `fotoKeluarDiambilPada`.
+- **`menitTelat` diisi Admin/Supervisor saat verifikasi absen masuk**, satu aksi dengan Approve. `potongan` dihitung server: `potongan = menitTelat × 1000`. Admin hanya mengisi `menitTelat` (integer ≥ 0); server menghitung `potongan` agar konsisten dan tidak bisa dimanipulasi.
+- **`menitTelat` hanya berlaku untuk absen masuk.** Tidak ada `menitTelatKeluar` — pulang lebih awal tidak dihitung telat.
+- Karyawan dianggap **hadir** di hari itu setelah absen masuk diverifikasi (status `DIVERIFIKASI`).
+- **Satu kehadiran = satu record Attendance.** Kalau karyawan bekerja dalam dua segmen terpisah di hari yang sama (kasus PAM), maka ada **dua record Attendance** di hari itu.
+- Auto-close tetap berlaku: shift menggantung >20 jam → `autoClosed = true`, `absenKeluar` tetap null. Admin dapat mengisi manual via override-keluar (yang juga menghitung `totalMenitKerja`).
+- **Resubmit** absen masuk yang ditolak tetap berlaku; `absenMasuk` tidak berubah (timestamp asli dipertahankan), hanya foto & `fotoMasukDiambilPada` yang di-update.
+- Field `shiftMulai` dan `shiftSelesai` **tidak ada lagi** di Attendance. Acuan jadwal dibaca dari `ShiftAssignment` saat admin verifikasi (JOIN, bukan disimpan).
+
+### 5.1a Verifikasi Absensi
+- Admin/Supervisor membuka daftar absensi `PENDING_VERIFIKASI` di layar verifikasi.
+- Untuk setiap absensi, sistem menampilkan: nama karyawan, toko, `absenMasuk`, `absenKeluar`, foto, jarak dari toko, dan jadwal shift acuan (dari `ShiftAssignment` pada tanggal & toko yang sama, bila ada).
+- Admin mengisi satu field: `menitTelat` (integer, boleh 0).
+- Admin mencentang `isPam` bila kehadiran tersebut bagian dari penugasan PAM.
+- Klik Approve → server menyimpan `menitTelat`, menghitung `potongan = menitTelat × 1000`, dan set `statusMasuk = "DIVERIFIKASI"`. Aksi ini dicatat di `AuditLog`.
+- Klik Reject → karyawan dapat resubmit (alur yang sudah ada).
+- Verifikasi absen **keluar** (`statusKeluar`) menggunakan alur terpisah tanpa `menitTelat` (cukup Approve/Reject).
 
 ### 5.2 Shift
-- Shift bisa dibuat manual atau otomatis (per minggu/per hari).
-- Auto-generate berdasarkan: jam buka/tutup per toko (§4.1) dan jumlah karyawan yang terdaftar di toko tersebut. Sistem harus mendukung pola jam kerja yang berbeda per hari dalam seminggu (contoh: BGM Dieng beda pola weekday vs weekend).
-- Shift 24 jam (Arsaba Mart) dan shift yang overlap tengah malam (contoh 18.00–06.00) harus direpresentasikan dengan benar (jam mulai & jam selesai bisa lintas hari kalender).
-- Admin/supervisor bisa memotong/menyesuaikan jam kerja shift secara manual untuk kondisi khusus (sesuai catatan Arsaba Mart: "bisa potong waktu kalau ada sesuatu").
+- Shift dibuat manual atau otomatis (per minggu/per hari), tersimpan di `ShiftInstance` + `ShiftAssignment`.
+- **Jadwal shift berfungsi sebagai acuan keberangkatan/kepulangan**, bukan penentu otomatis `menitTelat`. Admin/Supervisor yang menilai telat saat verifikasi.
+- Auto-generate berdasarkan jam buka/tutup per toko (§4.1) dan jumlah karyawan terdaftar. Sistem mendukung pola jam kerja berbeda per hari dalam seminggu (contoh: BGM Dieng beda weekday vs weekend).
+- Shift 24 jam (Arsaba Mart) dan shift overlap tengah malam (contoh 18.00–06.00) direpresentasikan dengan jam mulai/selesai lintas hari.
+- Admin/supervisor bisa memotong/menyesuaikan jam kerja shift manual untuk kondisi khusus (sesuai catatan Arsaba Mart).
+- **Instance APPROVED yang diedit → reset ke DRAFT.** Karena absensi tidak lagi terikat jadwal, reset ini **tidak** menyentuh Attendance.
 
 ### 5.3 PAM (Backup Karyawan)
-- Dipicu ketika seorang karyawan izin/libur di suatu toko.
-- Admin/supervisor menugaskan karyawan lain (dari toko mana saja) sebagai backup.
-- **Konsep pembagian PAM**: shift kosong dibagi 2, masing-masing **5 jam**, diisi oleh (bisa) dua karyawan berbeda. Sistem harus mendukung satu slot shift kosong diisi oleh **lebih dari satu karyawan pengganti**, masing-masing dengan rentang jam sendiri.
-- **Syarat toko yang bisa memakai PAM**: hanya toko dengan **lebih dari 3 karyawan terdaftar**. Toko dengan 3 karyawan atau kurang secara default tidak menampilkan opsi PAM otomatis (karena tidak ada karyawan cadangan yang wajar untuk ditarik tanpa mengosongkan toko asal).
-- **Override**: Admin/Supervisor tetap bisa memaksa membuat penugasan PAM untuk toko dengan ≤3 karyawan jika situasinya mengharuskan (mengingat ini berdampak langsung ke pelayanan toko) — override ini harus tercatat di audit log (siapa yang override, toko mana, alasan opsional).
-- **Pencatatan gaji/jam kerja PAM dicatat di toko asal karyawan yang izin**, bukan di toko yang dibantu (ini penting untuk laporan kinerja per toko vs biaya tenaga kerja).
+
+**Konsep:**
+- PAM = menugaskan karyawan dari shift lain untuk menutupi kekurangan tenaga di shift yang kehilangan karyawan (izin/libur).
+- **PAM dipecah menjadi 2 segmen.** Contoh: Toko A punya shift Pagi 07:00–17:00 (karyawan A & B) dan Siang 12:00–22:00 (karyawan C & D). A izin → Pagi cuma B. C ditugaskan PAM dengan jam **07:00–12:00** dan **17:00–22:00** (jeda 12:00–17:00 C pulang/tidak bertugas). Hasilnya tiap rentang jam tetap 2 karyawan.
+
+**Pencatatan:**
+- Setiap segmen PAM dicatat sebagai **satu record Attendance terpisah**. Contoh C di atas → 2 Attendance di hari itu, masing-masing `totalMenitKerja = 300`.
+- `Attendance.isPam` (Boolean, default false) diisi Admin/Supervisor saat verifikasi (bersamaan dengan `menitTelat`).
+- `ShiftAssignment.segmen` (`NORMAL` | `PAM`) tetap ada sebagai acuan admin saat menyusun jadwal. Tidak ada relasi "PAM menggantikan assignment X" — admin yang tahu siapa menggantikan siapa.
+- **`Store.pamEnabled`** (Boolean, default `true`) — Admin dapat mematikan opsi PAM untuk toko tertentu via UI. Menggantikan syarat ">3 karyawan" di versi sebelumnya.
+
+**Gaji & pelaporan:**
+- **Gaji dihitung global**, dibebankan ke manajemen pusat (Arsaba Group), **bukan** per toko.
+- `Attendance.storeId` diisi toko tempat karyawan **benar-benar hadir** — untuk laporan kehadiran fisik. Payroll tidak memisahkan per toko.
+- `Attendance.isPam` di level Attendance (bukan User), karena satu karyawan bisa punya beberapa Attendance di hari yang sama dengan status PAM berbeda.
 
 ---
 
@@ -318,6 +348,9 @@ Berdasarkan file data karyawan yang diberikan client, field minimal untuk profil
 - **Bonus dan potongan tambahan diinput manual oleh manajer**, berdasarkan data absensi dan agenda yang sudah terverifikasi — sistem menyediakan rekomendasi/rincian otomatis (total telat, total agenda selesai, dll), tapi keputusan akhir nominal tetap di tangan manajer sebelum payroll di-lock per bulan.
 - **Bonus performa penjualan toko (khususnya untuk Kepala Toko) diinput manual sepenuhnya oleh manajer** — sistem **tidak menghitung otomatis** bonus jenis ini dari data penjualan (dikonfirmasi pemilik proyek). Cukup sediakan satu field nominal bebas di form payroll bulanan, dengan kolom keterangan opsional, yang diisi manajer berdasarkan penilaiannya sendiri terhadap performa toko.
 - Setelah payroll bulanan di-lock oleh manajer, data itu **tidak boleh diubah lagi** tanpa jejak audit (buat mekanisme "revisi" yang tercatat, bukan edit langsung).
+- **Gaji dihitung global** (level manajemen pusat Arsaba Group), tidak dibebankan per toko. Laporan payroll tidak memisahkan per toko.
+- `bonusPerforma` tetap ada sebagai input manual Manajer, tapi tidak terikat ke toko spesifik dalam perhitungan internal.
+- Sumber `totalPotonganTelat` di Payroll = akumulasi `Attendance.potongan` (yang nilainya dihitung server dari `menitTelat` yang diisi admin).
 
 ### 7.2 Dashboard Estimasi Gaji
 - Direktur s/d Admin: dashboard lintas toko (total estimasi payroll semua toko bulan berjalan).
@@ -380,4 +413,6 @@ Sebagian besar poin di versi sebelumnya sudah terjawab (lihat riwayat perubahan 
 
 ---
 
-*Dokumen ini sudah mencakup jawaban dari dua putaran diskusi. Perbarui bagian §12 setiap kali ada jawaban baru, dan revisi bagian terkait di atas.*
+*Dokumen ini sudah mencakup jawaban dari tiga putaran diskusi. Perbarui bagian §12 setiap kali ada jawaban baru, dan revisi bagian terkait di atas.*
+
+*Perubahan putaran ke-3 (§5.1, §5.1a, §5.2, §5.3, §7.1): sistem tidak lagi mencocokkan absensi dengan jadwal secara otomatis. `menitTelat` diisi admin saat verifikasi, `potongan` dihitung server. PAM dicatat sebagai Attendance terpisah per segmen, ditandai `isPam` saat verifikasi. Gaji dihitung global, tidak dibebankan per toko. Field `Attendance.shiftMulai`/`shiftSelesai` dihapus; acuan jadwal dibaca dari `ShiftAssignment`.*
