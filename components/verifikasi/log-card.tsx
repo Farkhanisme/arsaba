@@ -25,9 +25,16 @@ type LogData = {
   isOverride: boolean;
 };
 
+type JadwalAcuan = {
+  segmen: "NORMAL" | "PAM";
+  jamMulai: string;
+  jamSelesai: string;
+};
+
 type Props = {
   attendanceId: string;
   log: LogData;
+  jadwalAcuan?: JadwalAcuan[];
 };
 
 function formatWaktuWIB(iso: string | null): string {
@@ -42,7 +49,7 @@ function formatWaktuWIB(iso: string | null): string {
   return `${dd}/${mm}/${yyyy} ${hh}:${mi} WIB`;
 }
 
-export function LogCard({ attendanceId, log }: Props) {
+export function LogCard({ attendanceId, log, jadwalAcuan = [] }: Props) {
   const router = useRouter();
   const bagian = log.jenis === "MASUK" ? "masuk" : "keluar";
 
@@ -53,6 +60,8 @@ export function LogCard({ attendanceId, log }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [mode, setMode] = useState<"idle" | "reject">("idle");
   const [reason, setReason] = useState("");
+  const [menitTelat, setMenitTelat] = useState("0");
+  const [isPam, setIsPam] = useState(false);
 
   const kirim = useCallback(
     async (action: "approve" | "reject", reasonText?: string) => {
@@ -64,6 +73,9 @@ export function LogCard({ attendanceId, log }: Props) {
           body: JSON.stringify({
             bagian,
             action,
+            ...(bagian === "masuk" && action === "approve"
+              ? { menitTelat: Number(menitTelat), isPam }
+              : {}),
             ...(action === "reject" ? { reason: reasonText } : {}),
           }),
         });
@@ -79,6 +91,8 @@ export function LogCard({ attendanceId, log }: Props) {
         setOptimisticVerifiedBy("Anda (baru saja)");
         setMode("idle");
         setReason("");
+        setMenitTelat("0");
+        setIsPam(false);
         toast.success(
           action === "approve"
             ? `Absen ${bagian} disetujui.`
@@ -92,7 +106,7 @@ export function LogCard({ attendanceId, log }: Props) {
         setIsSubmitting(false);
       }
     },
-    [attendanceId, bagian, router]
+    [attendanceId, bagian, router, menitTelat, isPam]
   );
 
   const judul = log.jenis === "MASUK" ? "Absen Masuk" : "Absen Keluar";
@@ -134,9 +148,66 @@ export function LogCard({ attendanceId, log }: Props) {
           <p className="text-muted-foreground">Tidak ada foto.</p>
         )}
 
+        {log.jenis === "MASUK" && status === "PENDING_VERIFIKASI" && mode === "idle" && (
+          <div className="mt-3 space-y-3 border-t pt-3">
+            {jadwalAcuan.length > 0 && (
+              <div className="rounded-md bg-muted p-3 text-xs">
+                <p className="font-semibold">Jadwal acuan:</p>
+                <ul className="mt-1 space-y-0.5">
+                  {jadwalAcuan.map((j, i) => (
+                    <li key={i}>
+                      {j.segmen}: {formatWaktuWIB(j.jamMulai)} – {formatWaktuWIB(j.jamSelesai)}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-muted-foreground">
+                  Bandingkan dengan waktu absen masuk di atas untuk menentukan menit telat.
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <Label htmlFor={`menit-telat-${log.id}`}>Menit telat (0 jika tidak telat)</Label>
+              <Input
+                id={`menit-telat-${log.id}`}
+                type="number"
+                min={0}
+                max={1440}
+                step={1}
+                value={menitTelat}
+                onChange={(e) => setMenitTelat(e.target.value)}
+                disabled={isSubmitting}
+              />
+            </div>
+
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={isPam}
+                onChange={(e) => setIsPam(e.target.checked)}
+                disabled={isSubmitting}
+              />
+              Tandai absen ini sebagai PAM (penugasan backup)
+            </label>
+          </div>
+        )}
+
         {status === "PENDING_VERIFIKASI" && mode === "idle" && (
           <div className="mt-3 flex gap-2 border-t pt-3">
-            <Button type="button" disabled={isSubmitting} onClick={() => kirim("approve")}>
+            <Button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => {
+                if (bagian === "masuk") {
+                  const n = Number(menitTelat);
+                  if (!Number.isInteger(n) || n < 0 || n > 1440) {
+                    toast.error("Menit telat harus angka bulat 0–1440.");
+                    return;
+                  }
+                }
+                kirim("approve");
+              }}
+            >
               {isSubmitting ? "Mengirim..." : `Setujui Absen ${bagian}`}
             </Button>
             <Button

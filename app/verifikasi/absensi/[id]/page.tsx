@@ -55,6 +55,22 @@ export default async function VerifikasiAbsensiDetailPage({
 
   if (!attendance) notFound();
 
+  const jadwalAcuan = await prisma.shiftAssignment.findMany({
+    where: {
+      employeeId: attendance.employeeId,
+      shiftInstance: {
+        tanggal: attendance.tanggalShift,
+        statusJadwal: "APPROVED",
+      },
+    },
+    select: {
+      segmen: true,
+      jamMulai: true,
+      jamSelesai: true,
+    },
+    orderBy: { jamMulai: "asc" },
+  });
+
   return (
     <main className="container mx-auto max-w-3xl p-6">
       <Link href="/verifikasi/absensi" className="text-sm text-muted-foreground hover:underline">
@@ -91,6 +107,11 @@ export default async function VerifikasiAbsensiDetailPage({
           <LogCard
             key={log.id}
             attendanceId={attendance.id}
+            jadwalAcuan={jadwalAcuan.map((j) => ({
+              segmen: j.segmen,
+              jamMulai: j.jamMulai.toISOString(),
+              jamSelesai: j.jamSelesai.toISOString(),
+            }))}
             log={{
               id: log.id,
               jenis: log.jenis,
