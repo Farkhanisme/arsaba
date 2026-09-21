@@ -65,11 +65,11 @@ const nextAuth = NextAuth({
     },
     async session({ session, token }) {
       if (token) {
-        session.user.id = token.id as string;
-        session.user.role = token.role as string;
-        session.user.storeId = token.storeId as string | null;
-        token.status && (session.user.status = token.status as string);
-        session.user.nama = token.nama as string;
+        session.user.id = token.id;
+        session.user.role = token.role;
+        session.user.storeId = token.storeId;
+        session.user.status = token.status;
+        session.user.nama = token.nama;
       }
       return session;
     },
