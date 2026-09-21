@@ -8,7 +8,8 @@ import type { Role } from "@prisma/client";
 
 const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
 
-function formatRupiah(n: number): string {
+function formatRupiah(n: number | null): string {
+  if (n === null) return "—";
   return "Rp" + n.toLocaleString("id-ID");
 }
 
@@ -101,7 +102,12 @@ export default async function DetailTemplatePage({
           <CardTitle className="text-base">Detail Template</CardTitle>
         </CardHeader>
         <CardContent className="space-y-1 text-sm">
-          <p>Bonus: {formatRupiah(template.nominal)}</p>
+          <p>
+  Bonus:{" "}
+  {template.nominal === null
+    ? "belum ditetapkan"
+    : formatRupiah(template.nominal)}
+</p>
           <p>Deadline: {formatTanggalWIB(template.deadline)}</p>
           <p>Status: {template.status}</p>
         </CardContent>

@@ -8,7 +8,8 @@ import type { Role } from "@prisma/client";
 
 const ALLOWED_ROLES: Role[] = ["SUPERVISOR", "ADMIN", "MANAJER"];
 
-function formatRupiah(n: number): string {
+function formatRupiah(n: number | null): string {
+  if (n === null) return "—";
   return "Rp" + n.toLocaleString("id-ID");
 }
 
@@ -88,7 +89,12 @@ export default async function VerifikasiAgendaDetailPage({
           </p>
           <p>Sumber: {agenda.sumber}</p>
           {agenda.template && <p>Dari template: {agenda.template.judul}</p>}
-          <p>Nominal: {formatRupiah(agenda.nominal)}</p>
+          <p>
+  Nominal:{" "}
+  {agenda.nominal === null
+    ? "belum ditetapkan (menunggu Manajer)"
+    : formatRupiah(agenda.nominal)}
+</p>
           <p>Deadline: {formatTanggalWIB(agenda.deadline)}</p>
           <p>Diselesaikan: {formatTanggalWIB(agenda.diselesaikanPada)}</p>
           <p>Status: {agenda.status}</p>

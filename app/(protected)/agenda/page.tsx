@@ -8,7 +8,8 @@ import type { Role } from "@prisma/client";
 
 const ALLOWED_ROLES: Role[] = ["KARYAWAN", "KEPALA_TOKO"];
 
-function formatRupiah(n: number): string {
+function formatRupiah(n: number | null): string {
+  if (n === null) return "—";
   return "Rp" + n.toLocaleString("id-ID");
 }
 
@@ -90,7 +91,10 @@ export default async function AgendaPage() {
               {a.deskripsi && (
                 <p className="text-muted-foreground">{a.deskripsi}</p>
               )}
-              <p>Bonus: {formatRupiah(a.nominal)}</p>
+              <p>
+  Bonus:{" "}
+  {a.nominal === null ? "belum ditetapkan" : formatRupiah(a.nominal)}
+</p>
               <p className="text-muted-foreground">
                 Deadline: {formatTanggalWIB(a.deadline)}
               </p>
@@ -115,7 +119,10 @@ export default async function AgendaPage() {
               <CardTitle className="text-base">{a.judul}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-1 text-sm">
-              <p>Bonus: {formatRupiah(a.nominal)}</p>
+              <p>
+  Bonus:{" "}
+  {a.nominal === null ? "belum ditetapkan" : formatRupiah(a.nominal)}
+</p>
               <p className="text-muted-foreground">
                 Selesai: {formatTanggalWIB(a.diselesaikanPada)}
               </p>
@@ -144,7 +151,10 @@ export default async function AgendaPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-1 text-sm">
-              <p>Bonus: {formatRupiah(a.nominal)}</p>
+              <p>
+  Bonus:{" "}
+  {a.nominal === null ? "belum ditetapkan" : formatRupiah(a.nominal)}
+</p>
               <p className="text-muted-foreground">
                 Selesai: {formatTanggalWIB(a.diselesaikanPada)}
               </p>

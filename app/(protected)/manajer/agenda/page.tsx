@@ -8,7 +8,8 @@ import type { Role } from "@prisma/client";
 
 const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
 
-function formatRupiah(n: number): string {
+function formatRupiah(n: number | null): string {
+  if (n === null) return "—";
   return "Rp" + n.toLocaleString("id-ID");
 }
 
@@ -77,7 +78,10 @@ export default async function KelolaAgendaPage() {
                 <CardTitle className="text-base">{t.judul}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-1 text-sm">
-                <p>Bonus: {formatRupiah(t.nominal)}</p>
+                <p>
+  Bonus:{" "}
+  {t.nominal === null ? "belum ditetapkan" : formatRupiah(t.nominal)}
+</p>
                 <p className="text-muted-foreground">
                   Deadline: {formatTanggalWIB(t.deadline)}
                 </p>
