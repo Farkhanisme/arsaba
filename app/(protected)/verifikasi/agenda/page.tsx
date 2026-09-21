@@ -39,7 +39,10 @@ export default async function VerifikasiAgendaPage() {
   }
 
   const daftar = await prisma.agenda.findMany({
-    where: { status: "PENDING_VERIFIKASI" },
+    where: {
+      status: "PENDING_VERIFIKASI",
+      targetEmployeeId: { not: null },
+    },
     orderBy: { createdAt: "desc" },
     take: 100,
     include: {
