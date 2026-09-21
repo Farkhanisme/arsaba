@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import type { Role } from "@prisma/client";
 
-const ALLOWED_ROLES: Role[] = ["ADMIN"];
+const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
 
 type Body = {
   nama?: unknown;
@@ -24,7 +24,7 @@ export async function PATCH(
     }
     if (!ALLOWED_ROLES.includes(session.user.role)) {
       return NextResponse.json(
-        { error: "Hanya Admin yang berwenang mengubah toko." },
+        { error: "Role Anda tidak berwenang mengubah toko." },
         { status: 403 }
       );
     }

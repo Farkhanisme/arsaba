@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Role } from "@prisma/client";
 
 const ALLOWED_READ_ROLES: Role[] = ["ADMIN", "MANAJER", "SUPERVISOR"];
-const ALLOWED_WRITE_ROLES: Role[] = ["ADMIN"];
+const ALLOWED_WRITE_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
 
 // GET /api/store — list semua toko.
 // Query opsional: ?aktif=true
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     }
     if (!ALLOWED_WRITE_ROLES.includes(session.user.role)) {
       return NextResponse.json(
-        { error: "Hanya Admin yang berwenang membuat toko." },
+        { error: "Role Anda tidak berwenang membuat toko." },
         { status: 403 }
       );
     }
