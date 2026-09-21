@@ -106,6 +106,7 @@ model User {
 
   agendasCreated  Agenda[] @relation("AgendaCreator")
   agendasVerified Agenda[] @relation("AgendaVerifier")
+  agendasNominalSet Agenda[] @relation("AgendaNominalSetter")
   agendasTargeted Agenda[] @relation("AgendaTarget")
 
   riwayatPenempatan RiwayatPenempatan[] @relation("RiwayatEmployee")
@@ -320,7 +321,7 @@ model Agenda {
   id        String       @id @default(cuid())
   judul     String
   deskripsi String?
-  nominal   Int // bonus per agenda, diatur Manajer (§6)
+  nominal   Int? // bonus per agenda, diisi Manajer setelah verifikasi
   sumber    SumberAgenda
 
   // Self-relation: agenda ini adalah turunan dari template induk (nullable)
@@ -345,6 +346,11 @@ model Agenda {
   verifiedById String?
   verifiedAt   DateTime?
 
+  // Kapan & siapa yang set nominal (manajer)
+  nominalSetBy   User?     @relation("AgendaNominalSetter", fields: [nominalSetById], references: [id])
+  nominalSetById String?
+  nominalSetAt   DateTime?
+
   // Bukti penyelesaian (foto, file_id Telegram) — opsional, boleh salah satu atau keduanya
   buktiBeforeFileId String?
   buktiAfterFileId  String?
@@ -361,6 +367,7 @@ model Agenda {
   @@index([targetEmployeeId])
   @@index([templateId])
   @@index([deadline])
+  @@index([nominalSetById])
 }
 
 // ============ GAJI & PAYROLL (§7) ============
