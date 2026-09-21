@@ -4,8 +4,8 @@ import { uploadToTelegram } from "@/lib/telegram";
 import { NextRequest, NextResponse } from "next/server";
 
 // POST /api/agenda/[id]/selesai
-// Karyawan tandai agenda selesai: upload bukti foto + set diselesaikanPada.
-// Body: multipart/form-data, field 'foto' (File, wajib).
+// Karyawan tandai agenda selesai: upload bukti fotoBefore/fotoAfter (opsional) + set diselesaikanPada.
+// Body: multipart/form-data, field 'fotoBefore' (File, opsional), 'fotoAfter' (File, opsional).
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -19,14 +19,8 @@ export async function POST(
     const { id } = await params;
 
     const formData = await request.formData();
-    const foto = formData.get("foto") as File | null;
-
-    if (!foto) {
-      return NextResponse.json(
-        { error: "Field 'foto' wajib diisi." },
-        { status: 400 }
-      );
-    }
+    const fotoBefore = formData.get("fotoBefore") as File | null;
+    const fotoAfter = formData.get("fotoAfter") as File | null;
 
     const agenda = await prisma.agenda.findUnique({
       where: { id },
@@ -66,26 +60,43 @@ export async function POST(
       );
     }
 
-    const arrayBuffer = await foto.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const filename =
-      foto.name || `agenda-selesai-${Date.now()}.jpg`;
-    const uploadResult = await uploadToTelegram(buffer, filename, {
-      asDocument: false,
-    });
+    let buktiBeforeFileId: string | null = null;
+    let buktiAfterFileId: string | null = null;
+
+    if (fotoBefore) {
+      const beforeBuf = Buffer.from(await fotoBefore.arrayBuffer());
+      const beforeName =
+        fotoBefore.name || `agenda-sebelum-${Date.now()}.jpg`;
+      const beforeResult = await uploadToTelegram(beforeBuf, beforeName, {
+        asDocument: false,
+      });
+      buktiBeforeFileId = beforeResult.fileId;
+    }
+
+    if (fotoAfter) {
+      const afterBuf = Buffer.from(await fotoAfter.arrayBuffer());
+      const afterName =
+        fotoAfter.name || `agenda-sesudah-${Date.now()}.jpg`;
+      const afterResult = await uploadToTelegram(afterBuf, afterName, {
+        asDocument: false,
+      });
+      buktiAfterFileId = afterResult.fileId;
+    }
 
     const now = new Date();
     const updated = await prisma.agenda.update({
       where: { id },
       data: {
-        buktiFileId: uploadResult.fileId,
+        buktiBeforeFileId,
+        buktiAfterFileId,
         diselesaikanPada: now,
       },
     });
 
     return NextResponse.json({
       id: updated.id,
-      buktiFileId: updated.buktiFileId,
+      buktiBeforeFileId: updated.buktiBeforeFileId,
+      buktiAfterFileId: updated.buktiAfterFileId,
       diselesaikanPada: updated.diselesaikanPada
         ? updated.diselesaikanPada.toISOString()
         : null,
