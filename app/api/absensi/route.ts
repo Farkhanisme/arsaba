@@ -1,19 +1,14 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { uploadToTelegram } from "@/lib/telegram";
-import {
-  cariDanHitungUntukCheckIn,
-  computeTanggalShiftWIB,
-} from "@/lib/absensi";
+import { computeTanggalShiftWIB } from "@/lib/absensi";
 import { NextRequest, NextResponse } from "next/server";
 
 const AUTO_CLOSE_MS = 20 * 60 * 60 * 1000;
 
 // POST /api/absensi — CHECK-IN.
 // absenMasuk ditentukan server. Auto-close lazy untuk shift menggantung >20 jam.
-// Kalau ada ShiftAssignment yang sudah APPROVED, isi shiftMulai/shiftSelesai
-// dan hitung menitTelat/potongan. Kalau belum APPROVED atau tidak ada
-// assignment, biarkan null/0 (akan direcompute saat approve jadwal).
+// menitTelat/potongan diisi 0 saat check-in; Admin mengisi saat verifikasi (V4e-1).
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
@@ -108,11 +103,6 @@ export async function POST(request: NextRequest) {
     });
 
     const tanggalShift = computeTanggalShiftWIB(now);
-    const hitung = await cariDanHitungUntukCheckIn(
-      session.user.id,
-      now,
-      tanggalShift
-    );
 
     const attendance = await prisma.attendance.create({
       data: {
@@ -121,10 +111,8 @@ export async function POST(request: NextRequest) {
         tanggalShift,
         absenMasuk: now,
         fotoMasukDiambilPada: now,
-        shiftMulai: hitung.shiftMulai,
-        shiftSelesai: hitung.shiftSelesai,
-        menitTelat: hitung.menitTelat,
-        potongan: hitung.potongan,
+        menitTelat: 0,
+        potongan: 0,
         logs: {
           create: {
             jenis: "MASUK",
@@ -146,12 +134,6 @@ export async function POST(request: NextRequest) {
       absenMasuk: attendance.absenMasuk.toISOString(),
       absenKeluar: attendance.absenKeluar
         ? attendance.absenKeluar.toISOString()
-        : null,
-      shiftMulai: attendance.shiftMulai
-        ? attendance.shiftMulai.toISOString()
-        : null,
-      shiftSelesai: attendance.shiftSelesai
-        ? attendance.shiftSelesai.toISOString()
         : null,
       menitTelat: attendance.menitTelat,
       potongan: attendance.potongan,
