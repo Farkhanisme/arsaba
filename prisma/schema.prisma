@@ -72,10 +72,9 @@ enum SegmenShift {
 
 model User {
   id             String    @id @default(cuid())
+  kode           String    @unique // identifier login auto-increment: DIR-001, MGR-001, EMP-001
   nama           String
-  email          String?   @unique
-  emailVerified  DateTime?
-  hashedPassword String? // nullable: migrasi data lama belum punya password, Admin set saat aktivasi
+  hashedPassword String? // nullable: migrasi data lama belum punya password
   image          String?
 
   role                Role                 @default(KARYAWAN)
@@ -428,6 +427,14 @@ model AuditLog {
 
   @@index([tabel, recordId])
   @@index([actorId])
+}
+
+// ============ KODE COUNTER USER ============
+// Auto-increment per prefix (DIR, MGR, EMP). Dipakai generate kode user baru.
+
+model KodeCounter {
+  prefix     String @id // "DIR" | "MGR" | "EMP"
+  lastNumber Int    @default(0)
 }
 
 // ============ MODUL PENJUALAN PER TOKO (§4.2) ============
