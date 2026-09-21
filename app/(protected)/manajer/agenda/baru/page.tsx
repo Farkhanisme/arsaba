@@ -20,13 +20,6 @@ import {
 const schema = z.object({
   judul: z.string().min(3, "Judul minimal 3 karakter"),
   deskripsi: z.string().optional(),
-  nominal: z
-    .string()
-    .min(1, "Nominal wajib diisi")
-    .refine(
-      (v) => /^\d+$/.test(v.trim()),
-      "Nominal harus angka bulat (tanpa titik/koma)"
-    ),
   deadline: z
     .string()
     .optional()
@@ -47,7 +40,6 @@ export default function BikinAgendaBaruPage() {
     defaultValues: {
       judul: "",
       deskripsi: "",
-      nominal: "",
       deadline: "",
     },
   });
@@ -61,7 +53,6 @@ export default function BikinAgendaBaruPage() {
         body: JSON.stringify({
           judul: data.judul.trim(),
           deskripsi: data.deskripsi?.trim() || undefined,
-          nominal: Number(data.nominal),
           deadline: data.deadline || undefined,
         }),
       });
@@ -85,7 +76,8 @@ export default function BikinAgendaBaruPage() {
       <div>
         <h1 className="text-2xl font-bold">Bikin Template Agenda</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Setelah template dibuat, assign ke karyawan atau toko.
+          Setelah template dibuat, assign ke karyawan atau toko. Nominal bonus
+          akan diisi oleh Manajer setelah template selesai.
         </p>
       </div>
 
@@ -123,23 +115,6 @@ export default function BikinAgendaBaruPage() {
               {form.formState.errors.deskripsi && (
                 <p className="text-sm text-destructive">
                   {form.formState.errors.deskripsi.message}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="nominal">Bonus (Rp)</Label>
-              <Input
-                id="nominal"
-                type="text"
-                inputMode="numeric"
-                placeholder="Contoh: 50000"
-                {...form.register("nominal")}
-                disabled={isSubmitting}
-              />
-              {form.formState.errors.nominal && (
-                <p className="text-sm text-destructive">
-                  {form.formState.errors.nominal.message}
                 </p>
               )}
             </div>
