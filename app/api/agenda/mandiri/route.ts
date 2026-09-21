@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
       data: {
         judul: judul.trim(),
         deskripsi,
-        nominal: 0,
+        nominal: null,
         sumber: "MANDIRI_KARYAWAN",
         targetEmployeeId: session.user.id,
         targetStoreId: null,
