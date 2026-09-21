@@ -4,20 +4,17 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Role } from "@prisma/client";
 
 const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
-const NOMINAL_MAX = 10_000_000;
 
 type Action = "approve" | "reject";
 
 type Body = {
   action?: unknown;
   reason?: unknown;
-  nominal?: unknown;
 };
 
 // PATCH /api/agenda/[id]/verify
-// Body: { action: "approve" | "reject", reason?: string, nominal?: number }
-// - approve MANDIRI_KARYAWAN: nominal WAJIB
-// - approve TEMPLATE_PUSAT turunan: nominal opsional (override)
+// Body: { action: "approve" | "reject", reason?: string }
+// - approve: set status DIVERIFIKASI (nominal diisi manajer terpisah, lihat V4i-7)
 // - reject: reason WAJIB
 export async function PATCH(
   request: NextRequest,
@@ -56,9 +53,7 @@ export async function PATCH(
       where: { id },
       select: {
         id: true,
-        sumber: true,
         status: true,
-        nominal: true,
       },
     });
     if (!agenda) {
@@ -104,48 +99,10 @@ export async function PATCH(
     }
 
     // action === "approve"
-    let nominalBaru = agenda.nominal;
-
-    if (agenda.sumber === "MANDIRI_KARYAWAN") {
-      const nominal = body.nominal;
-      if (
-        typeof nominal !== "number" ||
-        !Number.isInteger(nominal) ||
-        nominal < 0 ||
-        nominal > NOMINAL_MAX
-      ) {
-        return NextResponse.json(
-          {
-            error: `Untuk agenda mandiri, field 'nominal' wajib diisi (integer 0-${NOMINAL_MAX}).`,
-          },
-          { status: 400 }
-        );
-      }
-      nominalBaru = nominal;
-    } else {
-      // TEMPLATE_PUSAT turunan: nominal opsional (override)
-      if (body.nominal !== undefined) {
-        const nominal = body.nominal;
-        if (
-          typeof nominal !== "number" ||
-          !Number.isInteger(nominal) ||
-          nominal < 0 ||
-          nominal > NOMINAL_MAX
-        ) {
-          return NextResponse.json(
-            { error: `Field 'nominal' harus integer 0-${NOMINAL_MAX}.` },
-            { status: 400 }
-          );
-        }
-        nominalBaru = nominal;
-      }
-    }
-
     const updated = await prisma.agenda.update({
       where: { id },
       data: {
         status: "DIVERIFIKASI",
-        nominal: nominalBaru,
         verifiedById: session.user.id,
         verifiedAt: now,
       },
@@ -154,7 +111,6 @@ export async function PATCH(
     return NextResponse.json({
       id: updated.id,
       status: updated.status,
-      nominal: updated.nominal,
       verifiedAt: updated.verifiedAt
         ? updated.verifiedAt.toISOString()
         : null,
