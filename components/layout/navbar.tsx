@@ -38,6 +38,10 @@ function menuUntukRole(role: Role): MenuItem[] {
     items.push({ href: "/manajer/agenda", label: "Kelola Agenda" });
   }
 
+  if (role === "MANAJER") {
+    items.push({ href: "/manajer/agenda/nominal", label: "Set Nominal" });
+  }
+
   return items;
 }
 
