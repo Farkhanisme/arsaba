@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
 const ALLOWED_ROLES = ["SUPERVISOR", "ADMIN", "MANAJER"];
+const POTONGAN_PER_MENIT = 1000;
+const MENIT_TELAT_MAX = 1440;
 
 type Bagian = "masuk" | "keluar";
 type Action = "approve" | "reject";
@@ -11,6 +13,8 @@ type Body = {
   bagian?: unknown;
   action?: unknown;
   reason?: unknown;
+  menitTelat?: unknown;
+  isPam?: unknown;
 };
 
 // PATCH /api/absensi/[id]/verify
@@ -66,6 +70,36 @@ export async function PATCH(
         );
       }
       reason = body.reason.trim();
+    }
+
+    let menitTelat = 0;
+    let isPam = false;
+
+    if (bagian === "masuk" && action === "approve") {
+      if (
+        typeof body.menitTelat !== "number" ||
+        !Number.isInteger(body.menitTelat) ||
+        body.menitTelat < 0 ||
+        body.menitTelat > MENIT_TELAT_MAX
+      ) {
+        return NextResponse.json(
+          {
+            error: `Field 'menitTelat' wajib diisi untuk approve absen masuk (integer 0-${MENIT_TELAT_MAX}).`,
+          },
+          { status: 400 }
+        );
+      }
+      menitTelat = body.menitTelat;
+
+      if (body.isPam !== undefined) {
+        if (typeof body.isPam !== "boolean") {
+          return NextResponse.json(
+            { error: "Field 'isPam' harus boolean bila diisi." },
+            { status: 400 }
+          );
+        }
+        isPam = body.isPam;
+      }
     }
 
     const attendance = await prisma.attendance.findUnique({
@@ -131,16 +165,27 @@ export async function PATCH(
     });
 
     const statusField = bagian === "masuk" ? "statusMasuk" : "statusKeluar";
-    const updatedAttendance = await prisma.attendance.update({
+    let updatedAttendance = await prisma.attendance.update({
       where: { id },
       data: { [statusField]: updatedLog.status },
     });
+
+    if (bagian === "masuk" && action === "approve") {
+      const potongan = menitTelat * POTONGAN_PER_MENIT;
+      updatedAttendance = await prisma.attendance.update({
+        where: { id },
+        data: { menitTelat, potongan, isPam },
+      });
+    }
 
     return NextResponse.json({
       attendanceId: updatedAttendance.id,
       bagian,
       statusMasuk: updatedAttendance.statusMasuk,
       statusKeluar: updatedAttendance.statusKeluar,
+      menitTelat: updatedAttendance.menitTelat,
+      potongan: updatedAttendance.potongan,
+      isPam: updatedAttendance.isPam,
       log: {
         id: updatedLog.id,
         jenis: updatedLog.jenis,
