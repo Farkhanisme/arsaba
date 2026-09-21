@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { Role } from "@prisma/client";
 
-const ALLOWED_ROLES: Role[] = ["ADMIN"];
+const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
 
 export default async function AdminTokoPage() {
   const session = await auth();
@@ -17,7 +17,7 @@ export default async function AdminTokoPage() {
       <main className="container mx-auto max-w-3xl p-6">
         <h1 className="text-2xl font-bold">Akses ditolak</h1>
         <p className="mt-2 text-muted-foreground">
-          Halaman ini hanya untuk Admin.
+          Halaman ini hanya untuk Admin, Supervisor, dan Manajer.
         </p>
       </main>
     );
@@ -39,7 +39,7 @@ export default async function AdminTokoPage() {
             {stores.length} toko terdaftar.
           </p>
         </div>
-        <Link href="/admin/toko/baru">
+        <Link href="/master/toko/baru">
           <Button>Tambah Toko</Button>
         </Link>
       </div>
@@ -52,7 +52,7 @@ export default async function AdminTokoPage() {
         )}
 
         {stores.map((s) => (
-          <Link key={s.id} href={`/admin/toko/${s.id}`} className="block">
+          <Link key={s.id} href={`/master/toko/${s.id}`} className="block">
             <Card className="transition-colors hover:bg-muted/50">
               <CardHeader>
                 <CardTitle className="text-base">

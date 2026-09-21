@@ -65,7 +65,7 @@ export function StoreForm(props: Props) {
         return;
       }
       toast.success(isCreate ? "Toko dibuat." : "Toko diubah.");
-      router.push("/admin/toko");
+      router.push("/master/toko");
       router.refresh();
     } catch {
       toast.error("Terjadi kesalahan jaringan.");
@@ -131,7 +131,7 @@ export function StoreForm(props: Props) {
         <Button
           type="button"
           variant="outline"
-          onClick={() => router.push("/admin/toko")}
+          onClick={() => router.push("/master/toko")}
           disabled={isSubmitting}
         >
           Batal

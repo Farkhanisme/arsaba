@@ -1,18 +1,13 @@
 import { auth } from "@/auth";
-import { prisma } from "@/lib/prisma";
-import { redirect, notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StoreForm } from "@/components/store/store-form";
 import type { Role } from "@prisma/client";
 
-const ALLOWED_ROLES: Role[] = ["ADMIN"];
+const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
 
-export default async function AdminTokoEditPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function AdminTokoBaruPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
@@ -21,39 +16,26 @@ export default async function AdminTokoEditPage({
       <main className="container mx-auto max-w-3xl p-6">
         <h1 className="text-2xl font-bold">Akses ditolak</h1>
         <p className="mt-2 text-muted-foreground">
-          Halaman ini hanya untuk Admin.
+          Halaman ini hanya untuk Admin, Supervisor, dan Manajer.
         </p>
       </main>
     );
   }
 
-  const { id } = await params;
-
-  const store = await prisma.store.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      nama: true,
-      alias: true,
-      aktif: true,
-      pamEnabled: true,
-    },
-  });
-
-  if (!store) notFound();
-
   return (
     <div className="space-y-6">
       <Link
-        href="/admin/toko"
+        href="/master/toko"
         className="text-sm text-muted-foreground hover:underline"
       >
         ← Kembali ke daftar
       </Link>
 
       <div>
-        <h1 className="text-2xl font-bold">Edit Toko</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{store.nama}</p>
+        <h1 className="text-2xl font-bold">Tambah Toko</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Isi data toko baru.
+        </p>
       </div>
 
       <Card>
@@ -61,16 +43,7 @@ export default async function AdminTokoEditPage({
           <CardTitle className="text-base">Detail Toko</CardTitle>
         </CardHeader>
         <CardContent>
-          <StoreForm
-            mode="edit"
-            storeId={store.id}
-            initial={{
-              nama: store.nama,
-              alias: store.alias,
-              aktif: store.aktif,
-              pamEnabled: store.pamEnabled,
-            }}
-          />
+          <StoreForm mode="create" />
         </CardContent>
       </Card>
     </div>
