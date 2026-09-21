@@ -142,11 +142,7 @@ export default async function VerifikasiAgendaDetailPage({
             <CardTitle className="text-base">Verifikasi</CardTitle>
           </CardHeader>
           <CardContent>
-            <VerifyForm
-              agendaId={agenda.id}
-              sumber={agenda.sumber}
-              nominalSaatIni={agenda.nominal}
-            />
+            <VerifyForm agendaId={agenda.id} />
           </CardContent>
         </Card>
       )}

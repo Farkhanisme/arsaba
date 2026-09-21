@@ -9,48 +9,20 @@ import { Label } from "@/components/ui/label";
 
 type Props = {
   agendaId: string;
-  sumber: "TEMPLATE_PUSAT" | "MANDIRI_KARYAWAN";
-  nominalSaatIni: number;
 };
 
-export function VerifyForm({ agendaId, sumber, nominalSaatIni }: Props) {
+export function VerifyForm({ agendaId }: Props) {
   const router = useRouter();
   const [mode, setMode] = useState<"idle" | "reject">("idle");
   const [reason, setReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [nominalStr, setNominalStr] = useState(
-    sumber === "TEMPLATE_PUSAT" ? String(nominalSaatIni) : ""
-  );
 
-  const kirim = async (
-    action: "approve" | "reject",
-    reasonText?: string
-  ) => {
+  const kirim = async (action: "approve" | "reject", reasonText?: string) => {
     setIsSubmitting(true);
     try {
-      let body: Record<string, unknown> = { action };
-
+      const body: Record<string, unknown> = { action };
       if (action === "reject") {
         body.reason = reasonText;
-      } else {
-        // approve: nominal wajib untuk mandiri, opsional untuk template
-        if (sumber === "MANDIRI_KARYAWAN") {
-          const n = Number(nominalStr);
-          if (!Number.isInteger(n) || n < 0) {
-            toast.error("Nominal harus angka bulat >= 0.");
-            setIsSubmitting(false);
-            return;
-          }
-          body.nominal = n;
-        } else if (nominalStr.trim().length > 0) {
-          const n = Number(nominalStr);
-          if (!Number.isInteger(n) || n < 0) {
-            toast.error("Nominal harus angka bulat >= 0.");
-            setIsSubmitting(false);
-            return;
-          }
-          body.nominal = n;
-        }
       }
 
       const res = await fetch(`/api/agenda/${agendaId}/verify`, {
@@ -77,33 +49,9 @@ export function VerifyForm({ agendaId, sumber, nominalSaatIni }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="space-y-1">
-        <Label htmlFor="nominal">
-          Nominal bonus{" "}
-          {sumber === "MANDIRI_KARYAWAN"
-            ? "(wajib — diisi manajer)"
-            : "(opsional — override, biarkan sesuai template)"}
-        </Label>
-        <Input
-          id="nominal"
-          type="text"
-          inputMode="numeric"
-          placeholder={
-            sumber === "MANDIRI_KARYAWAN"
-              ? "Contoh: 50000"
-              : String(nominalSaatIni)
-          }
-          value={nominalStr}
-          onChange={(e) => setNominalStr(e.target.value)}
-          disabled={isSubmitting}
-        />
-        {sumber === "TEMPLATE_PUSAT" && (
-          <p className="text-xs text-muted-foreground">
-            Biarkan apa adanya untuk pakai nominal template (
-            Rp{nominalSaatIni.toLocaleString("id-ID")}).
-          </p>
-        )}
-      </div>
+      <p className="text-sm text-muted-foreground">
+        Nominal bonus akan diisi oleh Manajer setelah agenda disetujui.
+      </p>
 
       {mode === "idle" && (
         <div className="flex gap-2 border-t pt-4">
