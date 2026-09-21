@@ -43,6 +43,15 @@ export async function POST(
       );
     }
 
+    const segmenRaw = body.segmen;
+    if (segmenRaw !== undefined && segmenRaw !== "NORMAL" && segmenRaw !== "PAM") {
+      return NextResponse.json(
+        { error: "Field 'segmen' harus 'NORMAL' atau 'PAM'." },
+        { status: 400 }
+      );
+    }
+    const segmen: "NORMAL" | "PAM" = (segmenRaw as "NORMAL" | "PAM" | undefined) ?? "NORMAL";
+
     const instance = await prisma.shiftInstance.findUnique({ where: { id } });
     if (!instance) {
       return NextResponse.json(
@@ -73,7 +82,7 @@ export async function POST(
         { status: 400 }
       );
     }
-    if (employee.storeId !== instance.storeId) {
+    if (segmen === "NORMAL" && employee.storeId !== instance.storeId) {
       return NextResponse.json(
         { error: "Karyawan tidak terdaftar di toko ini." },
         { status: 400 }
@@ -84,6 +93,63 @@ export async function POST(
         { error: "Role karyawan tidak bisa di-assign ke shift." },
         { status: 400 }
       );
+    }
+
+    let jamMulaiFinal = instance.jamMulai;
+    let jamSelesaiFinal = instance.jamSelesai;
+
+    if (segmen === "PAM") {
+      const store = await prisma.store.findUnique({
+        where: { id: instance.storeId },
+        select: { pamEnabled: true },
+      });
+      if (!store || store.pamEnabled === false) {
+        return NextResponse.json(
+          { error: "PAM dinonaktifkan untuk toko ini." },
+          { status: 400 }
+        );
+      }
+
+      const jamMulaiRaw = body.jamMulai;
+      const jamSelesaiRaw = body.jamSelesai;
+      if (typeof jamMulaiRaw !== "string" || typeof jamSelesaiRaw !== "string") {
+        return NextResponse.json(
+          {
+            error:
+              "Untuk segmen PAM, field 'jamMulai' dan 'jamSelesai' wajib diisi (ISO datetime).",
+          },
+          { status: 400 }
+        );
+      }
+      const jamMulaiParsed = new Date(jamMulaiRaw);
+      const jamSelesaiParsed = new Date(jamSelesaiRaw);
+      if (
+        Number.isNaN(jamMulaiParsed.getTime()) ||
+        Number.isNaN(jamSelesaiParsed.getTime())
+      ) {
+        return NextResponse.json(
+          { error: "Format 'jamMulai' atau 'jamSelesai' tidak valid." },
+          { status: 400 }
+        );
+      }
+      if (jamMulaiParsed.getTime() >= jamSelesaiParsed.getTime()) {
+        return NextResponse.json(
+          { error: "Field 'jamMulai' harus lebih awal dari 'jamSelesai'." },
+          { status: 400 }
+        );
+      }
+      jamMulaiFinal = jamMulaiParsed;
+      jamSelesaiFinal = jamSelesaiParsed;
+    } else {
+      if (body.jamMulai !== undefined || body.jamSelesai !== undefined) {
+        return NextResponse.json(
+          {
+            error:
+              "Field 'jamMulai'/'jamSelesai' tidak boleh diisi untuk segmen NORMAL.",
+          },
+          { status: 400 }
+        );
+      }
     }
 
     const duplikat = await prisma.shiftAssignment.findFirst({
@@ -101,8 +167,8 @@ export async function POST(
       where: {
         employeeId,
         shiftInstance: { tanggal: instance.tanggal },
-        jamMulai: { lt: instance.jamSelesai },
-        jamSelesai: { gt: instance.jamMulai },
+        jamMulai: { lt: jamSelesaiFinal },
+        jamSelesai: { gt: jamMulaiFinal },
       },
     });
     if (overlap) {
@@ -119,9 +185,9 @@ export async function POST(
       data: {
         shiftInstanceId: id,
         employeeId,
-        segmen: "NORMAL",
-        jamMulai: instance.jamMulai,
-        jamSelesai: instance.jamSelesai,
+        segmen,
+        jamMulai: jamMulaiFinal,
+        jamSelesai: jamSelesaiFinal,
         createdById: session.user.id,
       },
     });
