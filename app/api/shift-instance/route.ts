@@ -141,7 +141,6 @@ export async function GET(request: NextRequest) {
           segmen: a.segmen,
           jamMulai: a.jamMulai.toISOString(),
           jamSelesai: a.jamSelesai.toISOString(),
-          pamKeterangan: a.pamKeterangan,
         })),
       })),
     });

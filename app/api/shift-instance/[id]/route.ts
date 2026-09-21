@@ -83,7 +83,6 @@ export async function GET(
         segmen: a.segmen,
         jamMulai: a.jamMulai.toISOString(),
         jamSelesai: a.jamSelesai.toISOString(),
-        pamKeterangan: a.pamKeterangan,
         createdByName: a.createdBy.nama,
         createdAt: a.createdAt.toISOString(),
       })),
