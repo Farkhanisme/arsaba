@@ -194,7 +194,8 @@ export async function GET(request: NextRequest) {
         targetEmployeeId: a.targetEmployeeId,
         targetEmployeeNama: a.targetEmployee?.nama ?? null,
         status: a.status,
-        buktiFileId: a.buktiFileId,
+        buktiBeforeFileId: a.buktiBeforeFileId,
+        buktiAfterFileId: a.buktiAfterFileId,
         diselesaikanPada: a.diselesaikanPada
           ? a.diselesaikanPada.toISOString()
           : null,
