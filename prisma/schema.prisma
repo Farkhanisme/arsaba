@@ -130,6 +130,7 @@ model Store {
   // Alias nama lama, lihat §4.1/§4.3: "DAPUR RUMAH" → "Dapur Produksi", "ARSABA DIENG" → "Counter Dieng"
   alias String?
   aktif Boolean @default(true)
+  pamEnabled Boolean @default(true)
 
   employees    User[]        @relation("StoreEmployees")
   attendances  Attendance[]
@@ -172,8 +173,6 @@ model Attendance {
   storeId    String
 
   tanggalShift DateTime  @db.Date
-  shiftMulai   DateTime?
-  shiftSelesai DateTime?
 
   // Kapan karyawan dianggap masuk/pulang (dari log pertama untuk masuk,
   // dari log terbaru untuk keluar). Auto-close tidak mengisinya.
@@ -195,6 +194,7 @@ model Attendance {
   // Auto-close untuk shift yang tidak check-out
   autoClosed   Boolean   @default(false)
   autoClosedAt DateTime?
+  isPam        Boolean   @default(false)
   totalMenitKerja Int @default(0)
 
   createdAt DateTime @default(now())
@@ -301,8 +301,6 @@ model ShiftAssignment {
   segmen              SegmenShift   @default(NORMAL)
   jamMulai            DateTime
   jamSelesai          DateTime
-  pamDariAssignmentId String?
-  pamKeterangan       String?
 
   createdBy   User   @relation("AssignmentCreator", fields: [createdById], references: [id])
   createdById String
