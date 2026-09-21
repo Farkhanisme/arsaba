@@ -33,6 +33,8 @@ function menuUntukRole(role: Role): MenuItem[] {
     role === "MANAJER"
   ) {
     items.push({ href: "/verifikasi/absensi", label: "Verifikasi Absensi" });
+    items.push({ href: "/verifikasi/agenda", label: "Verifikasi Agenda" });
+    items.push({ href: "/manajer/agenda", label: "Kelola Agenda" });
   }
 
   return items;
