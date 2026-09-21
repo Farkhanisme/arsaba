@@ -13,7 +13,8 @@ const ALLOWED_LIST_ROLES = [
 ];
 
 // POST /api/agenda — bikin TEMPLATE master (sumber TEMPLATE_PUSAT, tanpa target).
-// Body: { judul, deskripsi?, nominal, deadline? }
+// Body: { judul, deskripsi?, deadline? }
+// Nominal diisi manajer setelah verifikasi (V4i-7), bukan di sini.
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
@@ -46,18 +47,6 @@ export async function POST(request: NextRequest) {
       typeof body.deskripsi === "string" && body.deskripsi.trim().length > 0
         ? body.deskripsi.trim()
         : null;
-
-    const nominal = body.nominal;
-    if (
-      typeof nominal !== "number" ||
-      !Number.isInteger(nominal) ||
-      nominal < 0
-    ) {
-      return NextResponse.json(
-        { error: "Field 'nominal' wajib diisi (integer >= 0)." },
-        { status: 400 }
-      );
-    }
 
     let deadline: Date | null = null;
     if (body.deadline !== undefined && body.deadline !== null) {
@@ -95,7 +84,6 @@ export async function POST(request: NextRequest) {
       data: {
         judul: judul.trim(),
         deskripsi,
-        nominal,
         sumber: "TEMPLATE_PUSAT",
         targetStoreId: null,
         targetEmployeeId: null,
