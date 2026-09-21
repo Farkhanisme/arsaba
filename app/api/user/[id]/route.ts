@@ -15,7 +15,6 @@ const ASSIGNABLE_ROLES: Role[] = [
 
 type Body = {
   nama?: unknown;
-  email?: unknown;
   role?: unknown;
   storeId?: unknown;
   status?: unknown;
@@ -72,32 +71,6 @@ export async function PATCH(
         );
       }
       data.nama = body.nama.trim();
-    }
-
-    if (body.email !== undefined) {
-      if (
-        typeof body.email !== "string" ||
-        !body.email.includes("@") ||
-        body.email.trim().length < 5
-      ) {
-        return NextResponse.json(
-          { error: "Field 'email' format tidak valid." },
-          { status: 400 }
-        );
-      }
-      const emailTrim = body.email.trim().toLowerCase();
-      if (emailTrim !== existing.email) {
-        const duplikat = await prisma.user.findUnique({
-          where: { email: emailTrim },
-        });
-        if (duplikat) {
-          return NextResponse.json(
-            { error: "Email sudah terdaftar." },
-            { status: 409 }
-          );
-        }
-      }
-      data.email = emailTrim;
     }
 
     if (body.role !== undefined) {
@@ -246,8 +219,8 @@ export async function PATCH(
       data,
       select: {
         id: true,
+        kode: true,
         nama: true,
-        email: true,
         role: true,
         status: true,
         storeId: true,
@@ -257,8 +230,8 @@ export async function PATCH(
 
     return NextResponse.json({
       id: updated.id,
+      kode: updated.kode,
       nama: updated.nama,
-      email: updated.email,
       role: updated.role,
       status: updated.status,
       storeId: updated.storeId,
