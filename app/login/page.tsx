@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/card";
 
 const loginSchema = z.object({
-  email: z.string().email("Format email tidak valid"),
+  kode: z.string().min(1, "Kode karyawan wajib diisi"),
   password: z.string().min(1, "Kata sandi wajib diisi"),
 });
 
@@ -40,7 +40,7 @@ export default function LoginPage() {
   const form = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: "",
+      kode: "",
       password: "",
     },
   });
@@ -49,20 +49,20 @@ export default function LoginPage() {
     setIsSubmitting(true);
     try {
       const result = await signIn("credentials", {
-        email: data.email,
+        kode: data.kode,
         password: data.password,
         redirect: false,
       });
 
       if (result?.error) {
-        toast.error("Email atau kata sandi salah");
+        toast.error("Kode karyawan atau kata sandi salah");
         return;
       }
 
       router.push("/dashboard");
       router.refresh();
     } catch (err) {
-      toast.error("Email atau kata sandi salah");
+      toast.error("Kode karyawan atau kata sandi salah");
     } finally {
       setIsSubmitting(false);
     }
@@ -79,15 +79,16 @@ export default function LoginPage() {
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <FormField
                 control={form.control}
-                name="email"
+                name="kode"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel htmlFor="email">Email</FormLabel>
+                    <FormLabel htmlFor="kode">Kode Karyawan</FormLabel>
                     <FormControl>
                       <Input
-                        id="email"
-                        type="email"
-                        placeholder="email@contoh.com"
+                        id="kode"
+                        type="text"
+                        placeholder="Contoh: EMP-001"
+                        autoComplete="username"
                         {...field}
                       />
                     </FormControl>
