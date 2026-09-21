@@ -35,15 +35,6 @@ export async function DELETE(
       );
     }
 
-    // Kumpulkan semua employeeId di instance ini (termasuk yang akan dihapus)
-    const semuaAssignment = await prisma.shiftAssignment.findMany({
-      where: { shiftInstanceId: id },
-      select: { employeeId: true },
-    });
-    const employeeIdsReset = [
-      ...new Set(semuaAssignment.map((a) => a.employeeId)),
-    ];
-
     await prisma.shiftAssignment.delete({ where: { id: assignmentId } });
 
     let statusInstance: "DRAFT" | "APPROVED" =
@@ -57,22 +48,6 @@ export async function DELETE(
           approvedAt: null,
         },
       });
-
-      if (employeeIdsReset.length > 0) {
-        await prisma.attendance.updateMany({
-          where: {
-            employeeId: { in: employeeIdsReset },
-            tanggalShift: existing.shiftInstance.tanggal,
-          },
-          data: {
-            shiftMulai: null,
-            shiftSelesai: null,
-            menitTelat: 0,
-            potongan: 0,
-          },
-        });
-      }
-
       statusInstance = "DRAFT";
     }
 
