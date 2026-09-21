@@ -323,11 +323,19 @@ model Agenda {
   nominal   Int // bonus per agenda, diatur Manajer (§6)
   sumber    SumberAgenda
 
+  // Self-relation: agenda ini adalah turunan dari template induk (nullable)
+  template   Agenda?  @relation("AgendaTemplate", fields: [templateId], references: [id], onDelete: SetNull)
+  templateId String?
+  turunan    Agenda[] @relation("AgendaTemplate")
+
   // Target opsional: agenda bisa berlaku umum, ke toko tertentu, atau ke karyawan tertentu (§6)
   targetStore      Store?  @relation(fields: [targetStoreId], references: [id])
   targetStoreId    String?
   targetEmployee   User?   @relation("AgendaTarget", fields: [targetEmployeeId], references: [id])
   targetEmployeeId String?
+
+  // Deadline agenda — di-set manajer, nullable (agenda tanpa deadline tetap valid)
+  deadline DateTime?
 
   createdBy   User   @relation("AgendaCreator", fields: [createdById], references: [id])
   createdById String
@@ -337,6 +345,12 @@ model Agenda {
   verifiedById String?
   verifiedAt   DateTime?
 
+  // Bukti penyelesaian (foto, file_id Telegram) — diisi karyawan saat lapor selesai
+  buktiFileId String?
+
+  // Kapan karyawan menandai agenda ini selesai
+  diselesaikanPada DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -344,6 +358,8 @@ model Agenda {
   @@index([status])
   @@index([targetStoreId])
   @@index([targetEmployeeId])
+  @@index([templateId])
+  @@index([deadline])
 }
 
 // ============ GAJI & PAYROLL (§7) ============
