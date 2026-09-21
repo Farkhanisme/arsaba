@@ -15,6 +15,12 @@ const ASSIGNABLE_ROLES: Role[] = [
   "DIREKTUR",
 ];
 
+function prefixUntukRole(role: Role): string {
+  if (role === "DIREKTUR") return "DIR";
+  if (role === "MANAJER") return "MGR";
+  return "EMP";
+}
+
 // GET /api/user — list user. Query: ?role=xxx&storeId=xxx&status=xxx
 export async function GET(request: NextRequest) {
   try {
@@ -67,8 +73,8 @@ export async function GET(request: NextRequest) {
       take: 200,
       select: {
         id: true,
+        kode: true,
         nama: true,
-        email: true,
         role: true,
         status: true,
         storeId: true,
@@ -83,8 +89,8 @@ export async function GET(request: NextRequest) {
       total: items.length,
       items: items.map((u) => ({
         id: u.id,
+        kode: u.kode,
         nama: u.nama,
-        email: u.email,
         role: u.role,
         status: u.status,
         storeId: u.storeId,
@@ -103,7 +109,8 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/user — bikin user baru. Body: { nama, email, password, role, storeId?, tanggalMasuk? }
+// POST /api/user — bikin user baru. Kode di-generate otomatis.
+// Body: { nama, password, role, storeId?, tanggalMasuk? }
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
@@ -132,14 +139,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const email = body.email;
-    if (typeof email !== "string" || !email.includes("@") || email.trim().length < 5) {
-      return NextResponse.json(
-        { error: "Field 'email' wajib diisi dengan format valid." },
-        { status: 400 }
-      );
-    }
-
     const password = body.password;
     if (typeof password !== "string" || password.length < 6) {
       return NextResponse.json(
@@ -155,6 +154,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    const roleTyped = role as Role;
 
     const storeId =
       typeof body.storeId === "string" && body.storeId.length > 0
@@ -193,17 +193,6 @@ export async function POST(request: NextRequest) {
       tanggalMasuk = parsed;
     }
 
-    const emailTrim = email.trim().toLowerCase();
-    const duplikat = await prisma.user.findUnique({
-      where: { email: emailTrim },
-    });
-    if (duplikat) {
-      return NextResponse.json(
-        { error: "Email sudah terdaftar." },
-        { status: 409 }
-      );
-    }
-
     if (storeId) {
       const store = await prisma.store.findUnique({ where: { id: storeId } });
       if (!store) {
@@ -215,22 +204,33 @@ export async function POST(request: NextRequest) {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    const prefix = prefixUntukRole(roleTyped);
 
-    const created = await prisma.user.create({
-      data: {
-        nama: nama.trim(),
-        email: emailTrim,
-        hashedPassword,
-        role: role as Role,
-        storeId,
-        tanggalMasuk,
-      },
+    const created = await prisma.$transaction(async (tx) => {
+      const counter = await tx.kodeCounter.upsert({
+        where: { prefix },
+        create: { prefix, lastNumber: 1 },
+        update: { lastNumber: { increment: 1 } },
+      });
+
+      const kode = `${prefix}-${String(counter.lastNumber).padStart(3, "0")}`;
+
+      return tx.user.create({
+        data: {
+          kode,
+          nama: nama.trim(),
+          hashedPassword,
+          role: roleTyped,
+          storeId,
+          tanggalMasuk,
+        },
+      });
     });
 
     return NextResponse.json({
       id: created.id,
+      kode: created.kode,
       nama: created.nama,
-      email: created.email,
       role: created.role,
       status: created.status,
       storeId: created.storeId,
