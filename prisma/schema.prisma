@@ -345,8 +345,9 @@ model Agenda {
   verifiedById String?
   verifiedAt   DateTime?
 
-  // Bukti penyelesaian (foto, file_id Telegram) — diisi karyawan saat lapor selesai
-  buktiFileId String?
+  // Bukti penyelesaian (foto, file_id Telegram) — opsional, boleh salah satu atau keduanya
+  buktiBeforeFileId String?
+  buktiAfterFileId  String?
 
   // Kapan karyawan menandai agenda ini selesai
   diselesaikanPada DateTime?
