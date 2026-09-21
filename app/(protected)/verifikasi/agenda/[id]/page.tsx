@@ -105,17 +105,33 @@ export default async function VerifikasiAgendaDetailPage({
         <CardHeader>
           <CardTitle className="text-base">Bukti Penyelesaian</CardTitle>
         </CardHeader>
-        <CardContent>
-          {agenda.buktiFileId ? (
-            <img
-              src={`/api/telegram/file/${encodeURIComponent(agenda.buktiFileId)}`}
-              alt="Bukti penyelesaian agenda"
-              className="max-h-96 rounded-md border object-contain"
-            />
-          ) : (
+        <CardContent className="space-y-4">
+          {!agenda.buktiBeforeFileId && !agenda.buktiAfterFileId && (
             <p className="text-sm text-muted-foreground">
               Tidak ada bukti foto.
             </p>
+          )}
+
+          {agenda.buktiBeforeFileId && (
+            <div>
+              <p className="mb-2 text-sm font-medium">Sebelum</p>
+              <img
+                src={`/api/telegram/file/${encodeURIComponent(agenda.buktiBeforeFileId)}`}
+                alt="Bukti sebelum"
+                className="max-h-96 rounded-md border object-contain"
+              />
+            </div>
+          )}
+
+          {agenda.buktiAfterFileId && (
+            <div>
+              <p className="mb-2 text-sm font-medium">Sesudah</p>
+              <img
+                src={`/api/telegram/file/${encodeURIComponent(agenda.buktiAfterFileId)}`}
+                alt="Bukti sesudah"
+                className="max-h-96 rounded-md border object-contain"
+              />
+            </div>
           )}
         </CardContent>
       </Card>

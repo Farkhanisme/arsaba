@@ -87,7 +87,13 @@ export default async function VerifikasiAgendaPage() {
                 </p>
                 <p className="text-muted-foreground">
                   Diselesaikan: {formatTanggalWIB(a.diselesaikanPada)}
-                  {a.buktiFileId ? " · ada bukti" : " · tanpa bukti"}
+                  {a.buktiBeforeFileId && a.buktiAfterFileId
+                    ? " · ada bukti before + after"
+                    : a.buktiBeforeFileId
+                    ? " · ada bukti before"
+                    : a.buktiAfterFileId
+                    ? " · ada bukti after"
+                    : " · tanpa bukti"}
                 </p>
               </CardContent>
             </Card>
