@@ -8,7 +8,7 @@ const ALLOWED_ROLES: Role[] = ["KARYAWAN", "KEPALA_TOKO"];
 
 // POST /api/agenda/mandiri
 // Karyawan lapor kegiatan mandiri (di luar template pusat) + bukti foto.
-// Body: multipart/form-data — judul (str), deskripsi (str opsional), foto (File wajib).
+// Body: multipart/form-data — judul (str), deskripsi (str opsional), fotoBefore (File opsional), fotoAfter (File opsional).
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
@@ -25,7 +25,8 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const judul = formData.get("judul");
     const deskripsiRaw = formData.get("deskripsi");
-    const foto = formData.get("foto") as File | null;
+    const fotoBefore = formData.get("fotoBefore") as File | null;
+    const fotoAfter = formData.get("fotoAfter") as File | null;
 
     if (typeof judul !== "string" || judul.trim().length < 3) {
       return NextResponse.json(
@@ -39,19 +40,28 @@ export async function POST(request: NextRequest) {
       deskripsi = deskripsiRaw.trim();
     }
 
-    if (!foto) {
-      return NextResponse.json(
-        { error: "Field 'foto' wajib diisi sebagai bukti." },
-        { status: 400 }
-      );
+    let buktiBeforeFileId: string | null = null;
+    let buktiAfterFileId: string | null = null;
+
+    if (fotoBefore) {
+      const beforeBuf = Buffer.from(await fotoBefore.arrayBuffer());
+      const beforeName =
+        fotoBefore.name || `agenda-mandiri-sebelum-${Date.now()}.jpg`;
+      const beforeResult = await uploadToTelegram(beforeBuf, beforeName, {
+        asDocument: false,
+      });
+      buktiBeforeFileId = beforeResult.fileId;
     }
 
-    const arrayBuffer = await foto.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const filename = foto.name || `agenda-mandiri-${Date.now()}.jpg`;
-    const uploadResult = await uploadToTelegram(buffer, filename, {
-      asDocument: false,
-    });
+    if (fotoAfter) {
+      const afterBuf = Buffer.from(await fotoAfter.arrayBuffer());
+      const afterName =
+        fotoAfter.name || `agenda-mandiri-sesudah-${Date.now()}.jpg`;
+      const afterResult = await uploadToTelegram(afterBuf, afterName, {
+        asDocument: false,
+      });
+      buktiAfterFileId = afterResult.fileId;
+    }
 
     const now = new Date();
 
@@ -63,7 +73,8 @@ export async function POST(request: NextRequest) {
         sumber: "MANDIRI_KARYAWAN",
         targetEmployeeId: session.user.id,
         targetStoreId: null,
-        buktiFileId: uploadResult.fileId,
+        buktiBeforeFileId,
+        buktiAfterFileId,
         diselesaikanPada: now,
         createdById: session.user.id,
       },
@@ -75,7 +86,8 @@ export async function POST(request: NextRequest) {
       deskripsi: created.deskripsi,
       sumber: created.sumber,
       status: created.status,
-      buktiFileId: created.buktiFileId,
+      buktiBeforeFileId: created.buktiBeforeFileId,
+      buktiAfterFileId: created.buktiAfterFileId,
       diselesaikanPada: created.diselesaikanPada
         ? created.diselesaikanPada.toISOString()
         : null,
