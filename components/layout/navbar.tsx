@@ -36,10 +36,13 @@ function menuUntukRole(role: Role): MenuItem[] {
     items.push({ href: "/verifikasi/absensi", label: "Verifikasi Absensi" });
     items.push({ href: "/verifikasi/agenda", label: "Verifikasi Agenda" });
     items.push({ href: "/manajer/agenda", label: "Kelola Agenda" });
+    items.push({ href: "/master/toko", label: "Master Toko" });
+    items.push({ href: "/master/karyawan", label: "Master Karyawan" });
   }
 
   if (role === "MANAJER") {
     items.push({ href: "/manajer/agenda/nominal", label: "Set Nominal" });
+    items.push({ href: "/manajer/gaji", label: "Kelola Gaji" });
   }
 
   return items;
@@ -56,7 +59,7 @@ export function Navbar({ user }: Props) {
   return (
     <header className="border-b bg-background">
       <div className="container mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
-        <Link href="/dashboard" className="font-bold" onClick={() => setOpen(false)}>
+        <Link href="/dashboard" className="font-bold">
           Arsaba
         </Link>
 
@@ -93,44 +96,69 @@ export function Navbar({ user }: Props) {
         <button
           type="button"
           className="md:hidden"
-          onClick={() => setOpen((v) => !v)}
-          aria-label="Menu"
+          onClick={() => setOpen(true)}
+          aria-label="Buka menu"
         >
-          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          <Menu className="h-5 w-5" />
         </button>
       </div>
 
-      {/* Mobile panel */}
+      {/* Mobile side drawer */}
       {open && (
-        <div className="border-t md:hidden">
-          <nav className="container mx-auto flex max-w-5xl flex-col px-4 py-2">
-            {items.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`rounded-md px-3 py-2 text-sm ${
-                  isActive(item.href)
-                    ? "bg-muted font-medium"
-                    : "text-muted-foreground"
-                }`}
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-40 bg-black/40 md:hidden"
+            onClick={() => setOpen(false)}
+            aria-hidden="true"
+          />
+
+          {/* Drawer */}
+          <aside className="fixed inset-y-0 right-0 z-50 flex w-72 max-w-[80vw] flex-col bg-background shadow-lg md:hidden">
+            <div className="flex h-14 items-center justify-between border-b px-4">
+              <span className="font-bold">Menu</span>
+              <button
+                type="button"
                 onClick={() => setOpen(false)}
+                aria-label="Tutup menu"
               >
-                {item.label}
-              </Link>
-            ))}
-            <div className="mt-2 flex items-center justify-between border-t pt-2">
-              <span className="text-sm text-muted-foreground">{user.nama ?? "-"}</span>
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <nav className="flex flex-1 flex-col overflow-y-auto px-2 py-3">
+              {items.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`rounded-md px-3 py-2 text-sm transition-colors ${
+                    isActive(item.href)
+                      ? "bg-muted font-medium"
+                      : "text-muted-foreground hover:bg-muted/50"
+                  }`}
+                  onClick={() => setOpen(false)}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+
+            <div className="border-t px-4 py-3">
+              <p className="mb-2 text-sm text-muted-foreground">
+                {user.nama ?? "-"}
+              </p>
               <Button
                 variant="outline"
                 size="sm"
+                className="w-full"
                 onClick={() => signOut({ callbackUrl: "/login" })}
               >
                 <LogOut className="mr-1 h-4 w-4" />
                 Keluar
               </Button>
             </div>
-          </nav>
-        </div>
+          </aside>
+        </>
       )}
     </header>
   );
