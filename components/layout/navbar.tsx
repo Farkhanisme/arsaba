@@ -63,39 +63,11 @@ export function Navbar({ user }: Props) {
           Arsaba
         </Link>
 
-        {/* Desktop menu */}
-        <nav className="hidden items-center gap-1 md:flex">
-          {items.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
-                isActive(item.href)
-                  ? "bg-muted font-medium"
-                  : "text-muted-foreground hover:bg-muted/50"
-              }`}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        
 
-        <div className="hidden items-center gap-2 md:flex">
-          <span className="text-sm text-muted-foreground">{user.nama ?? "-"}</span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => signOut({ callbackUrl: "/login" })}
-          >
-            <LogOut className="mr-1 h-4 w-4" />
-            Keluar
-          </Button>
-        </div>
-
-        {/* Mobile toggle */}
+        {/* Menu toggle (semua device) */}
         <button
           type="button"
-          className="md:hidden"
           onClick={() => setOpen(true)}
           aria-label="Buka menu"
         >
@@ -108,15 +80,15 @@ export function Navbar({ user }: Props) {
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 z-40 bg-black/40 md:hidden"
+            className="fixed inset-0 z-40 bg-black/40"
             onClick={() => setOpen(false)}
             aria-hidden="true"
           />
 
           {/* Drawer */}
-          <aside className="fixed inset-y-0 right-0 z-50 flex w-72 max-w-[80vw] flex-col bg-background shadow-lg md:hidden">
+          <aside className="fixed inset-y-0 right-0 z-50 flex w-72 max-w-[80vw] flex-col bg-background shadow-lg">
             <div className="flex h-14 items-center justify-between border-b px-4">
-              <span className="font-bold">Menu</span>
+              <span className="font-bold">Arsaba</span>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
