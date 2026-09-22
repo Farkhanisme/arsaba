@@ -25,7 +25,7 @@ export async function PATCH(
 ) {
   try {
     const session = await auth();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
 
@@ -146,53 +146,99 @@ export async function PATCH(
 
     const now = new Date();
 
-    const updatedLog = await prisma.attendanceLog.update({
-      where: { id: targetLog.id },
-      data:
-        action === "approve"
-          ? {
-              status: "DIVERIFIKASI",
-              verifiedById: session.user.id,
-              verifiedAt: now,
-              rejectedReason: null,
-            }
-          : {
-              status: "DITOLAK",
-              verifiedById: session.user.id,
-              verifiedAt: now,
-              rejectedReason: reason,
-            },
-    });
+    const nilaiSebelum = {
+      id: attendance.id,
+      employeeId: attendance.employeeId,
+      storeId: attendance.storeId,
+      statusMasuk: attendance.statusMasuk,
+      statusKeluar: attendance.statusKeluar,
+      menitTelat: attendance.menitTelat,
+      potongan: attendance.potongan,
+      isPam: attendance.isPam,
+      logs: attendance.logs.map((l) => ({
+        id: l.id,
+        jenis: l.jenis,
+        status: l.status,
+        verifiedById: l.verifiedById,
+        verifiedAt: l.verifiedAt?.toISOString() ?? null,
+        rejectedReason: l.rejectedReason,
+      })),
+    };
 
-    const statusField = bagian === "masuk" ? "statusMasuk" : "statusKeluar";
-    let updatedAttendance = await prisma.attendance.update({
-      where: { id },
-      data: { [statusField]: updatedLog.status },
-    });
-
-    if (bagian === "masuk" && action === "approve") {
-      const potongan = menitTelat * POTONGAN_PER_MENIT;
-      updatedAttendance = await prisma.attendance.update({
-        where: { id },
-        data: { menitTelat, potongan, isPam },
+    const result = await prisma.$transaction(async (tx) => {
+      const updatedLog = await tx.attendanceLog.update({
+        where: { id: targetLog.id },
+        data:
+          action === "approve"
+            ? {
+                status: "DIVERIFIKASI",
+                verifiedById: session.user.id,
+                verifiedAt: now,
+                rejectedReason: null,
+              }
+            : {
+                status: "DITOLAK",
+                verifiedById: session.user.id,
+                verifiedAt: now,
+                rejectedReason: reason,
+              },
       });
-    }
+
+      const statusField = bagian === "masuk" ? "statusMasuk" : "statusKeluar";
+      let updatedAttendance = await tx.attendance.update({
+        where: { id },
+        data: { [statusField]: updatedLog.status },
+      });
+
+      if (bagian === "masuk" && action === "approve") {
+        const potongan = menitTelat * POTONGAN_PER_MENIT;
+        updatedAttendance = await tx.attendance.update({
+          where: { id },
+          data: { menitTelat, potongan, isPam },
+        });
+      }
+
+      const nilaiSesudah = {
+        id: updatedAttendance.id,
+        employeeId: updatedAttendance.employeeId,
+        storeId: updatedAttendance.storeId,
+        statusMasuk: updatedAttendance.statusMasuk,
+        statusKeluar: updatedAttendance.statusKeluar,
+        menitTelat: updatedAttendance.menitTelat,
+        potongan: updatedAttendance.potongan,
+        isPam: updatedAttendance.isPam,
+      };
+
+      await tx.auditLog.create({
+        data: {
+          tabel: "Attendance",
+          recordId: updatedAttendance.id,
+          aksi: "UPDATE",
+          nilaiSebelum,
+          nilaiSesudah,
+          actorId: session.user.id,
+          alasan: action === "reject" ? reason : undefined,
+        },
+      });
+
+      return { updatedAttendance, updatedLog };
+    });
 
     return NextResponse.json({
-      attendanceId: updatedAttendance.id,
+      attendanceId: result.updatedAttendance.id,
       bagian,
-      statusMasuk: updatedAttendance.statusMasuk,
-      statusKeluar: updatedAttendance.statusKeluar,
-      menitTelat: updatedAttendance.menitTelat,
-      potongan: updatedAttendance.potongan,
-      isPam: updatedAttendance.isPam,
+      statusMasuk: result.updatedAttendance.statusMasuk,
+      statusKeluar: result.updatedAttendance.statusKeluar,
+      menitTelat: result.updatedAttendance.menitTelat,
+      potongan: result.updatedAttendance.potongan,
+      isPam: result.updatedAttendance.isPam,
       log: {
-        id: updatedLog.id,
-        jenis: updatedLog.jenis,
-        status: updatedLog.status,
-        verifiedById: updatedLog.verifiedById,
-        verifiedAt: updatedLog.verifiedAt ? updatedLog.verifiedAt.toISOString() : null,
-        rejectedReason: updatedLog.rejectedReason,
+        id: result.updatedLog.id,
+        jenis: result.updatedLog.jenis,
+        status: result.updatedLog.status,
+        verifiedById: result.updatedLog.verifiedById,
+        verifiedAt: result.updatedLog.verifiedAt ? result.updatedLog.verifiedAt.toISOString() : null,
+        rejectedReason: result.updatedLog.rejectedReason,
       },
     });
   } catch (err) {

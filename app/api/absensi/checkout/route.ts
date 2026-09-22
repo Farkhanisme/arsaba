@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
 
@@ -51,24 +51,63 @@ export async function POST(request: NextRequest) {
     const filename = foto.name || `absensi-keluar-${Date.now()}.jpg`;
     const uploadResult = await uploadToTelegram(buffer, filename, { asDocument: false });
 
-    const attendance = await prisma.attendance.update({
-      where: { id: existing.id },
-      data: {
-        absenKeluar: now,
-        fotoKeluarDiambilPada: now,
-        statusKeluar: "PENDING_VERIFIKASI",
-        totalMenitKerja,
-        logs: {
-          create: {
-            jenis: "KELUAR",
-            fotoFileId: uploadResult.fileId,
-            latitude,
-            longitude,
-            absenServerPada: now,
+    const attendance = await prisma.$transaction(async (tx) => {
+      const nilaiSebelum = {
+        id: existing.id,
+        employeeId: existing.employeeId,
+        storeId: existing.storeId,
+        absenMasuk: existing.absenMasuk.toISOString(),
+        absenKeluar: existing.absenKeluar?.toISOString() ?? null,
+        statusMasuk: existing.statusMasuk,
+        statusKeluar: existing.statusKeluar,
+        totalMenitKerja: existing.totalMenitKerja,
+        autoClosed: existing.autoClosed,
+        isPam: existing.isPam,
+      };
+
+      const updated = await tx.attendance.update({
+        where: { id: existing.id },
+        data: {
+          absenKeluar: now,
+          fotoKeluarDiambilPada: now,
+          statusKeluar: "PENDING_VERIFIKASI",
+          totalMenitKerja,
+          logs: {
+            create: {
+              jenis: "KELUAR",
+              fotoFileId: uploadResult.fileId,
+              latitude,
+              longitude,
+              absenServerPada: now,
+            },
           },
         },
-      },
-      include: { logs: true },
+        include: { logs: true },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tabel: "Attendance",
+          recordId: updated.id,
+          aksi: "UPDATE",
+          nilaiSebelum,
+          nilaiSesudah: {
+            id: updated.id,
+            employeeId: updated.employeeId,
+            storeId: updated.storeId,
+            absenMasuk: updated.absenMasuk.toISOString(),
+            absenKeluar: updated.absenKeluar?.toISOString() ?? null,
+            statusMasuk: updated.statusMasuk,
+            statusKeluar: updated.statusKeluar,
+            totalMenitKerja: updated.totalMenitKerja,
+            autoClosed: updated.autoClosed,
+            isPam: updated.isPam,
+          },
+          actorId: session.user.id,
+        },
+      });
+
+      return updated;
     });
 
     return NextResponse.json({

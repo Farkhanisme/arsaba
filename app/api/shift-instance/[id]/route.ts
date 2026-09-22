@@ -104,7 +104,7 @@ export async function PATCH(
 ) {
   try {
     const session = await auth();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
     if (!ALLOWED_ROLES.includes(session.user.role)) {
@@ -143,13 +143,49 @@ export async function PATCH(
     }
 
     const now = new Date();
-    const updated = await prisma.shiftInstance.update({
-      where: { id },
-      data: {
-        statusJadwal: "APPROVED",
-        approvedById: session.user.id,
-        approvedAt: now,
-      },
+
+    const nilaiSebelum = {
+      id: existing.id,
+      storeId: existing.storeId,
+      templateId: existing.templateId,
+      tanggal: existing.tanggal.toISOString().slice(0, 10),
+      jamMulai: existing.jamMulai.toISOString(),
+      jamSelesai: existing.jamSelesai.toISOString(),
+      statusJadwal: existing.statusJadwal,
+      sumberJadwal: existing.sumberJadwal,
+      batchId: existing.batchId,
+      catatan: existing.catatan,
+      approvedById: existing.approvedById,
+      approvedAt: existing.approvedAt?.toISOString() ?? null,
+    };
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const updated = await tx.shiftInstance.update({
+        where: { id },
+        data: {
+          statusJadwal: "APPROVED",
+          approvedById: session.user.id,
+          approvedAt: now,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tabel: "ShiftInstance",
+          recordId: updated.id,
+          aksi: "UPDATE",
+          nilaiSebelum,
+          nilaiSesudah: {
+            ...nilaiSebelum,
+            statusJadwal: "APPROVED",
+            approvedById: session.user.id,
+            approvedAt: now.toISOString(),
+          },
+          actorId: session.user.id,
+        },
+      });
+
+      return updated;
     });
 
     return NextResponse.json({
@@ -174,7 +210,7 @@ export async function DELETE(
 ) {
   try {
     const session = await auth();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
     if (!ALLOWED_ROLES.includes(session.user.role)) {
@@ -196,7 +232,35 @@ export async function DELETE(
       );
     }
 
-    await prisma.shiftInstance.delete({ where: { id } });
+    const nilaiSebelum = {
+      id: existing.id,
+      storeId: existing.storeId,
+      templateId: existing.templateId,
+      tanggal: existing.tanggal.toISOString().slice(0, 10),
+      jamMulai: existing.jamMulai.toISOString(),
+      jamSelesai: existing.jamSelesai.toISOString(),
+      statusJadwal: existing.statusJadwal,
+      sumberJadwal: existing.sumberJadwal,
+      batchId: existing.batchId,
+      catatan: existing.catatan,
+      approvedById: existing.approvedById,
+      approvedAt: existing.approvedAt?.toISOString() ?? null,
+    };
+
+    await prisma.$transaction(async (tx) => {
+      await tx.shiftInstance.delete({ where: { id } });
+
+      await tx.auditLog.create({
+        data: {
+          tabel: "ShiftInstance",
+          recordId: existing.id,
+          aksi: "DELETE",
+          nilaiSebelum,
+          actorId: session.user.id,
+        },
+      });
+    });
+
     return NextResponse.json({ deleted: true, id });
   } catch (err) {
     console.error("DELETE /api/shift-instance/[id] error:", err);

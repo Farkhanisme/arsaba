@@ -18,7 +18,7 @@ const ALLOWED_LIST_ROLES = [
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
     if (!ALLOWED_CREATE_ROLES.includes(session.user.role)) {
@@ -80,16 +80,42 @@ export async function POST(request: NextRequest) {
       deadline = parsed;
     }
 
-    const created = await prisma.agenda.create({
-      data: {
-        judul: judul.trim(),
-        deskripsi,
-        sumber: "TEMPLATE_PUSAT",
-        targetStoreId: null,
-        targetEmployeeId: null,
-        deadline,
-        createdById: session.user.id,
-      },
+    const created = await prisma.$transaction(async (tx) => {
+      const created = await tx.agenda.create({
+        data: {
+          judul: judul.trim(),
+          deskripsi,
+          sumber: "TEMPLATE_PUSAT",
+          targetStoreId: null,
+          targetEmployeeId: null,
+          deadline,
+          createdById: session.user.id,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tabel: "Agenda",
+          recordId: created.id,
+          aksi: "CREATE",
+          nilaiSesudah: {
+            id: created.id,
+            judul: created.judul,
+            deskripsi: created.deskripsi,
+            nominal: created.nominal,
+            sumber: created.sumber,
+            targetStoreId: created.targetStoreId,
+            targetEmployeeId: created.targetEmployeeId,
+            deadline: created.deadline?.toISOString() ?? null,
+            status: created.status,
+            templateId: created.templateId,
+            createdById: created.createdById,
+          },
+          actorId: session.user.id,
+        },
+      });
+
+      return created;
     });
 
     return NextResponse.json({

@@ -16,7 +16,7 @@ export async function POST(
 ) {
   try {
     const session = await auth();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
     if (!ALLOWED_ROLES.includes(session.user.role)) {
@@ -181,40 +181,85 @@ export async function POST(
       );
     }
 
-    const created = await prisma.shiftAssignment.create({
-      data: {
-        shiftInstanceId: id,
-        employeeId,
-        segmen,
-        jamMulai: jamMulaiFinal,
-        jamSelesai: jamSelesaiFinal,
-        createdById: session.user.id,
-      },
-    });
-
-    let statusInstance: "DRAFT" | "APPROVED" = instance.statusJadwal;
-    if (instance.statusJadwal === "APPROVED") {
-      await prisma.shiftInstance.update({
-        where: { id },
+    const result = await prisma.$transaction(async (tx) => {
+      const created = await tx.shiftAssignment.create({
         data: {
-          statusJadwal: "DRAFT",
-          approvedById: null,
-          approvedAt: null,
+          shiftInstanceId: id,
+          employeeId,
+          segmen,
+          jamMulai: jamMulaiFinal,
+          jamSelesai: jamSelesaiFinal,
+          createdById: session.user.id,
         },
       });
-      statusInstance = "DRAFT";
-    }
+
+      // Audit log for ShiftAssignment CREATE
+      await tx.auditLog.create({
+        data: {
+          tabel: "ShiftAssignment",
+          recordId: created.id,
+          aksi: "CREATE",
+          nilaiSesudah: {
+            id: created.id,
+            shiftInstanceId: created.shiftInstanceId,
+            employeeId: created.employeeId,
+            segmen: created.segmen,
+            jamMulai: created.jamMulai.toISOString(),
+            jamSelesai: created.jamSelesai.toISOString(),
+            createdById: created.createdById,
+          },
+          actorId: session.user.id,
+        },
+      });
+
+      let statusInstance: "DRAFT" | "APPROVED" = instance.statusJadwal;
+      if (instance.statusJadwal === "APPROVED") {
+        const updatedInstance = await tx.shiftInstance.update({
+          where: { id },
+          data: {
+            statusJadwal: "DRAFT",
+            approvedById: null,
+            approvedAt: null,
+          },
+        });
+
+        // Audit log for ShiftInstance UPDATE (APPROVED -> DRAFT)
+        await tx.auditLog.create({
+          data: {
+            tabel: "ShiftInstance",
+            recordId: updatedInstance.id,
+            aksi: "UPDATE",
+            nilaiSebelum: {
+              statusJadwal: "APPROVED",
+              approvedById: instance.approvedById,
+              approvedAt: instance.approvedAt?.toISOString() ?? null,
+            },
+            nilaiSesudah: {
+              statusJadwal: "DRAFT",
+              approvedById: null,
+              approvedAt: null,
+            },
+            actorId: session.user.id,
+            alasan: "Assignment ditambahkan ke instance yang sudah APPROVED, status direset ke DRAFT",
+          },
+        });
+
+        statusInstance = "DRAFT";
+      }
+
+      return { created, statusInstance };
+    });
 
     return NextResponse.json({
-      id: created.id,
-      shiftInstanceId: created.shiftInstanceId,
-      employeeId: created.employeeId,
+      id: result.created.id,
+      shiftInstanceId: result.created.shiftInstanceId,
+      employeeId: result.created.employeeId,
       employeeNama: employee.nama,
-      segmen: created.segmen,
-      jamMulai: created.jamMulai.toISOString(),
-      jamSelesai: created.jamSelesai.toISOString(),
-      createdAt: created.createdAt.toISOString(),
-      instanceStatusBaru: statusInstance,
+      segmen: result.created.segmen,
+      jamMulai: result.created.jamMulai.toISOString(),
+      jamSelesai: result.created.jamSelesai.toISOString(),
+      createdAt: result.created.createdAt.toISOString(),
+      instanceStatusBaru: result.statusInstance,
     });
   } catch (err) {
     console.error("POST /api/shift-instance/[id]/assignment error:", err);

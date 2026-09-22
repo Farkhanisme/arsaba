@@ -22,7 +22,7 @@ export async function PATCH(
 ) {
   try {
     const session = await auth();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
     if (!ALLOWED_ROLES.includes(session.user.role)) {
@@ -53,7 +53,21 @@ export async function PATCH(
       where: { id },
       select: {
         id: true,
+        judul: true,
+        deskripsi: true,
+        nominal: true,
+        sumber: true,
+        targetStoreId: true,
+        targetEmployeeId: true,
+        deadline: true,
         status: true,
+        templateId: true,
+        createdById: true,
+        buktiBeforeFileId: true,
+        buktiAfterFileId: true,
+        diselesaikanPada: true,
+        verifiedById: true,
+        verifiedAt: true,
       },
     });
     if (!agenda) {
@@ -71,6 +85,25 @@ export async function PATCH(
 
     const now = new Date();
 
+    const nilaiSebelum = {
+      id: agenda.id,
+      judul: agenda.judul,
+      deskripsi: agenda.deskripsi,
+      nominal: agenda.nominal,
+      sumber: agenda.sumber,
+      targetStoreId: agenda.targetStoreId,
+      targetEmployeeId: agenda.targetEmployeeId,
+      deadline: agenda.deadline?.toISOString() ?? null,
+      status: agenda.status,
+      templateId: agenda.templateId,
+      createdById: agenda.createdById,
+      buktiBeforeFileId: agenda.buktiBeforeFileId,
+      buktiAfterFileId: agenda.buktiAfterFileId,
+      diselesaikanPada: agenda.diselesaikanPada?.toISOString() ?? null,
+      verifiedById: agenda.verifiedById,
+      verifiedAt: agenda.verifiedAt?.toISOString() ?? null,
+    };
+
     if (action === "reject") {
       const reason = body.reason;
       if (typeof reason !== "string" || reason.trim().length < 3) {
@@ -80,13 +113,34 @@ export async function PATCH(
         );
       }
 
-      const updated = await prisma.agenda.update({
-        where: { id },
-        data: {
-          status: "DITOLAK",
-          verifiedById: session.user.id,
-          verifiedAt: now,
-        },
+      const updated = await prisma.$transaction(async (tx) => {
+        const updated = await tx.agenda.update({
+          where: { id },
+          data: {
+            status: "DITOLAK",
+            verifiedById: session.user.id,
+            verifiedAt: now,
+          },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            tabel: "Agenda",
+            recordId: updated.id,
+            aksi: "UPDATE",
+            nilaiSebelum,
+            nilaiSesudah: {
+              ...nilaiSebelum,
+              status: "DITOLAK",
+              verifiedById: session.user.id,
+              verifiedAt: now.toISOString(),
+            },
+            actorId: session.user.id,
+            alasan: reason,
+          },
+        });
+
+        return updated;
       });
 
       return NextResponse.json({
@@ -99,13 +153,33 @@ export async function PATCH(
     }
 
     // action === "approve"
-    const updated = await prisma.agenda.update({
-      where: { id },
-      data: {
-        status: "DIVERIFIKASI",
-        verifiedById: session.user.id,
-        verifiedAt: now,
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      const updated = await tx.agenda.update({
+        where: { id },
+        data: {
+          status: "DIVERIFIKASI",
+          verifiedById: session.user.id,
+          verifiedAt: now,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tabel: "Agenda",
+          recordId: updated.id,
+          aksi: "UPDATE",
+          nilaiSebelum,
+          nilaiSesudah: {
+            ...nilaiSebelum,
+            status: "DIVERIFIKASI",
+            verifiedById: session.user.id,
+            verifiedAt: now.toISOString(),
+          },
+          actorId: session.user.id,
+        },
+      });
+
+      return updated;
     });
 
     return NextResponse.json({

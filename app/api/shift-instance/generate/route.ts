@@ -43,7 +43,7 @@ function shiftTimeFromMenit(tanggalUTC: Date, menit: number): Date {
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
     if (!ALLOWED_ROLES.includes(session.user.role)) {
@@ -173,6 +173,18 @@ export async function POST(request: NextRequest) {
       async (tx) => {
         let instanceCount = 0;
         let assignmentCount = 0;
+        const createdInstances: Array<{
+          id: string;
+          storeId: string;
+          templateId: string | null;
+          tanggal: Date;
+          jamMulai: Date;
+          jamSelesai: Date;
+          statusJadwal: string;
+          sumberJadwal: string;
+          batchId: string | null;
+          createdById: string;
+        }> = [];
 
         for (let i = 0; i < jumlahHari; i++) {
           const tanggalUTC = tanggalList[i]!;
@@ -217,7 +229,7 @@ export async function POST(request: NextRequest) {
               }
             }
 
-            await tx.shiftInstance.create({
+            const instance = await tx.shiftInstance.create({
               data: {
                 storeId,
                 templateId: template!.id,
@@ -239,9 +251,45 @@ export async function POST(request: NextRequest) {
                 },
               },
             });
+            createdInstances.push({
+              id: instance.id,
+              storeId: instance.storeId,
+              templateId: instance.templateId,
+              tanggal: instance.tanggal,
+              jamMulai: instance.jamMulai,
+              jamSelesai: instance.jamSelesai,
+              statusJadwal: instance.statusJadwal,
+              sumberJadwal: instance.sumberJadwal,
+              batchId: instance.batchId,
+              createdById: instance.createdById,
+            });
             instanceCount += 1;
             assignmentCount += employeeIdsForShift.length;
           }
+        }
+
+        // Batch create audit logs for all created instances
+        if (createdInstances.length > 0) {
+          await tx.auditLog.createMany({
+            data: createdInstances.map((inst) => ({
+              tabel: "ShiftInstance",
+              recordId: inst.id,
+              aksi: "CREATE",
+              nilaiSesudah: {
+                id: inst.id,
+                storeId: inst.storeId,
+                templateId: inst.templateId,
+                tanggal: inst.tanggal.toISOString().slice(0, 10),
+                jamMulai: inst.jamMulai.toISOString(),
+                jamSelesai: inst.jamSelesai.toISOString(),
+                statusJadwal: inst.statusJadwal,
+                sumberJadwal: inst.sumberJadwal,
+                batchId: inst.batchId,
+                createdById: inst.createdById,
+              },
+              actorId: session.user.id,
+            })),
+          });
         }
 
         return { instanceCount, assignmentCount };

@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import type { Role, TipePerhitunganGaji } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 const ALLOWED_ROLES: Role[] = ["MANAJER"];
 const TARGET_ROLES: Role[] = ["SUPERVISOR", "ADMIN", "KEPALA_TOKO", "KARYAWAN"];
@@ -22,7 +23,7 @@ export async function PATCH(
 ) {
   try {
     const session = await auth();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
     if (!ALLOWED_ROLES.includes(session.user.role)) {
@@ -144,6 +145,23 @@ export async function PATCH(
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      // Capture nilai sebelum untuk User
+      const userBefore = await tx.user.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          tipePerhitunganGaji: true,
+          tarifPerJam: true,
+        },
+      });
+
+      // Capture nilai sebelum untuk GajiPokok
+      const gajiPokokBefore = await tx.gajiPokok.findUnique({
+        where: { employeeId: id },
+        select: { nominal: true },
+      });
+
+      // Update User
       await tx.user.update({
         where: { id },
         data: {
@@ -152,11 +170,49 @@ export async function PATCH(
         },
       });
 
+      // Audit log for User UPDATE
+      await tx.auditLog.create({
+        data: {
+          tabel: "User",
+          recordId: id,
+          aksi: "UPDATE",
+          nilaiSebelum: userBefore
+            ? {
+                id: userBefore.id,
+                tipePerhitunganGaji: userBefore.tipePerhitunganGaji,
+                tarifPerJam: userBefore.tarifPerJam,
+              }
+            : Prisma.JsonNull,
+          nilaiSesudah: {
+            id,
+            tipePerhitunganGaji: tipe,
+            tarifPerJam,
+          },
+          actorId: session.user.id,
+        },
+      });
+
+      // Upsert GajiPokok if nominal provided
+      let gajiPokokAfter: { nominal: number } | null = null;
       if (nominalGajiPokok !== null) {
-        await tx.gajiPokok.upsert({
+        const upserted = await tx.gajiPokok.upsert({
           where: { employeeId: id },
           create: { employeeId: id, nominal: nominalGajiPokok },
           update: { nominal: nominalGajiPokok },
+          select: { nominal: true },
+        });
+        gajiPokokAfter = upserted;
+
+        // Audit log for GajiPokok CREATE/UPDATE
+        await tx.auditLog.create({
+          data: {
+            tabel: "GajiPokok",
+            recordId: id, // employeeId is the unique key
+            aksi: gajiPokokBefore ? "UPDATE" : "CREATE",
+            nilaiSebelum: gajiPokokBefore ? { nominal: gajiPokokBefore.nominal } : Prisma.JsonNull,
+            nilaiSesudah: { nominal: nominalGajiPokok },
+            actorId: session.user.id,
+          },
         });
       }
 

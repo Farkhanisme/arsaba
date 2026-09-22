@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { uploadToTelegram } from "@/lib/telegram";
 import { computeTanggalShiftWIB } from "@/lib/absensi";
 import { NextRequest, NextResponse } from "next/server";
+import type { Attendance, AttendanceLog } from "@prisma/client";
 
 const AUTO_CLOSE_MS = 20 * 60 * 60 * 1000;
 
@@ -12,7 +13,7 @@ const AUTO_CLOSE_MS = 20 * 60 * 60 * 1000;
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
 
@@ -25,6 +26,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    const storeId = session.user.storeId;
 
     const formData = await request.formData();
     const foto = formData.get("foto") as File | null;
@@ -38,21 +40,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const latitude = latitudeStr ? Number(latitudeStr) : undefined;
-    const longitude = longitudeStr ? Number(longitudeStr) : undefined;
-    if (
-      latitude !== undefined &&
-      (Number.isNaN(latitude) || latitude < -90 || latitude > 90)
-    ) {
+    const latitude: number | null = latitudeStr ? Number(latitudeStr) : null;
+    const longitude: number | null = longitudeStr ? Number(longitudeStr) : null;
+    if (latitude !== null && (Number.isNaN(latitude) || latitude < -90 || latitude > 90)) {
       return NextResponse.json(
         { error: "Latitude tidak valid" },
         { status: 400 }
       );
     }
-    if (
-      longitude !== undefined &&
-      (Number.isNaN(longitude) || longitude < -180 || longitude > 180)
-    ) {
+    if (longitude !== null && (Number.isNaN(longitude) || longitude < -180 || longitude > 180)) {
       return NextResponse.json(
         { error: "Longitude tidak valid" },
         { status: 400 }
@@ -104,27 +100,53 @@ export async function POST(request: NextRequest) {
 
     const tanggalShift = computeTanggalShiftWIB(now);
 
-    const attendance = await prisma.attendance.create({
-      data: {
-        employeeId: session.user.id,
-        storeId: session.user.storeId,
-        tanggalShift,
-        absenMasuk: now,
-        fotoMasukDiambilPada: now,
-        menitTelat: 0,
-        potongan: 0,
-        logs: {
-          create: {
-            jenis: "MASUK",
-            fotoFileId: uploadResult.fileId,
-            latitude,
-            longitude,
-            absenServerPada: now,
+    const attendance = await prisma.$transaction(async (tx) => {
+      const created = await tx.attendance.create({
+        data: {
+          employeeId: session.user.id,
+          storeId,
+          tanggalShift,
+          absenMasuk: now,
+          fotoMasukDiambilPada: now,
+          menitTelat: 0,
+          potongan: 0,
+          logs: {
+            create: {
+              jenis: "MASUK",
+              fotoFileId: uploadResult.fileId,
+              latitude,
+              longitude,
+              absenServerPada: now,
+            },
           },
         },
-      },
-      include: { logs: true },
-    });
+        include: { logs: true },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tabel: "Attendance",
+          recordId: created.id,
+          aksi: "CREATE",
+          nilaiSesudah: {
+            id: created.id,
+            employeeId: created.employeeId,
+            storeId: created.storeId,
+            tanggalShift: created.tanggalShift.toISOString(),
+            absenMasuk: created.absenMasuk.toISOString(),
+            menitTelat: created.menitTelat,
+            potongan: created.potongan,
+            statusMasuk: created.statusMasuk,
+            statusKeluar: created.statusKeluar,
+            isPam: created.isPam,
+            autoClosed: created.autoClosed,
+          },
+          actorId: session.user.id,
+        },
+      });
+
+      return created;
+    }) as Attendance & { logs: AttendanceLog[] };
 
     return NextResponse.json({
       id: attendance.id,

@@ -12,7 +12,7 @@ const ALLOWED_ROLES: Role[] = ["KARYAWAN", "KEPALA_TOKO"];
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
     if (!ALLOWED_ROLES.includes(session.user.role)) {
@@ -65,19 +65,48 @@ export async function POST(request: NextRequest) {
 
     const now = new Date();
 
-    const created = await prisma.agenda.create({
-      data: {
-        judul: judul.trim(),
-        deskripsi,
-        nominal: null,
-        sumber: "MANDIRI_KARYAWAN",
-        targetEmployeeId: session.user.id,
-        targetStoreId: null,
-        buktiBeforeFileId,
-        buktiAfterFileId,
-        diselesaikanPada: now,
-        createdById: session.user.id,
-      },
+    const created = await prisma.$transaction(async (tx) => {
+      const created = await tx.agenda.create({
+        data: {
+          judul: judul.trim(),
+          deskripsi,
+          nominal: null,
+          sumber: "MANDIRI_KARYAWAN",
+          targetEmployeeId: session.user.id,
+          targetStoreId: null,
+          buktiBeforeFileId,
+          buktiAfterFileId,
+          diselesaikanPada: now,
+          createdById: session.user.id,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tabel: "Agenda",
+          recordId: created.id,
+          aksi: "CREATE",
+          nilaiSesudah: {
+            id: created.id,
+            judul: created.judul,
+            deskripsi: created.deskripsi,
+            nominal: created.nominal,
+            sumber: created.sumber,
+            targetStoreId: created.targetStoreId,
+            targetEmployeeId: created.targetEmployeeId,
+            deadline: created.deadline?.toISOString() ?? null,
+            status: created.status,
+            templateId: created.templateId,
+            buktiBeforeFileId: created.buktiBeforeFileId,
+            buktiAfterFileId: created.buktiAfterFileId,
+            diselesaikanPada: created.diselesaikanPada?.toISOString() ?? null,
+            createdById: created.createdById,
+          },
+          actorId: session.user.id,
+        },
+      });
+
+      return created;
     });
 
     return NextResponse.json({
