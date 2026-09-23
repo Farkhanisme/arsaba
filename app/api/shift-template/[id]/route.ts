@@ -1,65 +1,78 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 
 const ALLOWED_ROLES = ["ADMIN", "MANAJER", "SUPERVISOR"];
 
-function validasiJam(v: unknown): v is number {
-  return typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 1439;
-}
-
 // GET /api/shift-template/[id]
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
     if (!ALLOWED_ROLES.includes(session.user.role)) {
       return NextResponse.json(
-        { error: "Role Anda tidak berwenang mengelola shift template." },
+        { error: "Role Anda tidak berwenang melihat template shift." },
         { status: 403 }
       );
     }
 
     const { id } = await params;
-    const template = await prisma.shiftTemplate.findUnique({ where: { id } });
+
+    const template = await prisma.shiftTemplate.findUnique({
+      where: { id },
+      include: { store: { select: { id: true, nama: true } } },
+    });
+
     if (!template) {
-      return NextResponse.json({ error: "Template tidak ditemukan." }, { status: 404 });
+      return NextResponse.json({ error: "Template shift tidak ditemukan." }, { status: 404 });
     }
-    return NextResponse.json(template);
+
+    return NextResponse.json({
+      id: template.id,
+      storeId: template.storeId,
+      store: template.store,
+      nama: template.nama,
+      jamMulaiMenit: template.jamMulaiMenit,
+      jamSelesaiMenit: template.jamSelesaiMenit,
+      lintasHari: template.lintasHari,
+      hariKerja: template.hariKerja,
+      aktif: template.aktif,
+      createdAt: template.createdAt.toISOString(),
+      updatedAt: template.updatedAt.toISOString(),
+    });
   } catch (err) {
     console.error("GET /api/shift-template/[id] error:", err);
-    return NextResponse.json({ error: "Gagal memuat template." }, { status: 500 });
+    return NextResponse.json({ error: "Gagal mengambil template shift." }, { status: 500 });
   }
 }
 
 // PATCH /api/shift-template/[id]
-// Body: partial { nama?, jamMulaiMenit?, jamSelesaiMenit?, lintasHari?, aktif? }
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
     if (!ALLOWED_ROLES.includes(session.user.role)) {
       return NextResponse.json(
-        { error: "Role Anda tidak berwenang mengelola shift template." },
+        { error: "Role Anda tidak berwenang mengubah template shift." },
         { status: 403 }
       );
     }
 
     const { id } = await params;
+
     const existing = await prisma.shiftTemplate.findUnique({ where: { id } });
     if (!existing) {
-      return NextResponse.json({ error: "Template tidak ditemukan." }, { status: 404 });
+      return NextResponse.json({ error: "Template shift tidak ditemukan." }, { status: 404 });
     }
 
     let body: Record<string, unknown>;
@@ -69,146 +82,203 @@ export async function PATCH(
       return NextResponse.json({ error: "Body JSON tidak valid" }, { status: 400 });
     }
 
-    const data: {
-      nama?: string;
-      jamMulaiMenit?: number;
-      jamSelesaiMenit?: number;
-      lintasHari?: boolean;
-      aktif?: boolean;
-    } = {};
+    const updateData: Record<string, unknown> = {};
 
-    if ("nama" in body) {
+    if (body.nama !== undefined) {
       const nama = body.nama;
-      if (typeof nama !== "string" || nama.trim().length < 2 || nama.trim().length > 30) {
+      if (typeof nama !== "string" || nama.trim().length < 2) {
         return NextResponse.json(
-          { error: "Field 'nama' harus 2-30 karakter." },
+          { error: "Field 'nama' wajib diisi, minimal 2 karakter." },
           { status: 400 }
         );
       }
-      data.nama = nama.trim();
+      // Cek duplikat nama per toko (exclude self)
+      const dup = await prisma.shiftTemplate.findFirst({
+        where: {
+          storeId: existing.storeId,
+          nama: nama.trim(),
+          NOT: { id },
+        },
+      });
+      if (dup) {
+        return NextResponse.json(
+          { error: "Template dengan nama ini sudah ada di toko ini." },
+          { status: 409 }
+        );
+      }
+      updateData.nama = nama.trim();
     }
 
-    if ("jamMulaiMenit" in body) {
-      if (!validasiJam(body.jamMulaiMenit)) {
+    if (body.jamMulaiMenit !== undefined) {
+      const jamMulaiMenit = body.jamMulaiMenit;
+      if (
+        typeof jamMulaiMenit !== "number" ||
+        jamMulaiMenit < 0 ||
+        jamMulaiMenit > 1439
+      ) {
         return NextResponse.json(
           { error: "Field 'jamMulaiMenit' harus integer 0-1439." },
           { status: 400 }
         );
       }
-      data.jamMulaiMenit = body.jamMulaiMenit;
+      updateData.jamMulaiMenit = jamMulaiMenit;
     }
 
-    if ("jamSelesaiMenit" in body) {
-      if (!validasiJam(body.jamSelesaiMenit)) {
+    if (body.jamSelesaiMenit !== undefined) {
+      const jamSelesaiMenit = body.jamSelesaiMenit;
+      if (
+        typeof jamSelesaiMenit !== "number" ||
+        jamSelesaiMenit < 0 ||
+        jamSelesaiMenit > 1439
+      ) {
         return NextResponse.json(
           { error: "Field 'jamSelesaiMenit' harus integer 0-1439." },
           { status: 400 }
         );
       }
-      data.jamSelesaiMenit = body.jamSelesaiMenit;
+      updateData.jamSelesaiMenit = jamSelesaiMenit;
     }
 
-    if ("lintasHari" in body) {
-      if (typeof body.lintasHari !== "boolean") {
-        return NextResponse.json(
-          { error: "Field 'lintasHari' harus boolean." },
-          { status: 400 }
-        );
-      }
-      data.lintasHari = body.lintasHari;
+    if (body.lintasHari !== undefined) {
+      updateData.lintasHari = body.lintasHari === true;
     }
 
-    if ("aktif" in body) {
-      if (typeof body.aktif !== "boolean") {
-        return NextResponse.json(
-          { error: "Field 'aktif' harus boolean." },
-          { status: 400 }
-        );
-      }
-      data.aktif = body.aktif;
+    if (body.aktif !== undefined) {
+      updateData.aktif = body.aktif === true;
     }
 
-    const nextJamMulai = data.jamMulaiMenit ?? existing.jamMulaiMenit;
-    const nextJamSelesai = data.jamSelesaiMenit ?? existing.jamSelesaiMenit;
-    const nextLintasHari = data.lintasHari ?? existing.lintasHari;
+    if (Array.isArray(body.hariKerja)) {
+      const hariKerja = body.hariKerja
+        .filter((h): h is number => Number.isInteger(h) && h >= 0 && h <= 6)
+        .filter((h, i, arr) => arr.indexOf(h) === i);
+      updateData.hariKerja = hariKerja;
+    }
 
-    if (!nextLintasHari && nextJamSelesai <= nextJamMulai) {
+    // Validasi jam jika lintasHari
+    const jamMulai = updateData.jamMulaiMenit ?? existing.jamMulaiMenit;
+    const jamSelesai = updateData.jamSelesaiMenit ?? existing.jamSelesaiMenit;
+    const lintasHari = updateData.lintasHari ?? existing.lintasHari;
+    if (!lintasHari && jamMulai >= jamSelesai) {
       return NextResponse.json(
-        {
-          error:
-            "Jika lintasHari=false, jamSelesaiMenit harus lebih besar dari jamMulaiMenit.",
-        },
-        { status: 400 }
-      );
-    }
-    if (nextLintasHari && nextJamSelesai > nextJamMulai) {
-      return NextResponse.json(
-        {
-          error:
-            "Jika lintasHari=true, jamSelesaiMenit harus <= jamMulaiMenit.",
-        },
+        { error: "Jam selesai harus setelah jam mulai (kecuali shift lintas hari)." },
         { status: 400 }
       );
     }
 
-    try {
-      const updated = await prisma.shiftTemplate.update({
+    const updated = await prisma.$transaction(async (tx) => {
+      const template = await tx.shiftTemplate.update({
         where: { id },
-        data,
+        data: updateData,
       });
-      return NextResponse.json(updated);
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-        return NextResponse.json(
-          { error: `Nama template tersebut sudah dipakai di toko ini.` },
-          { status: 409 }
-        );
-      }
-      throw err;
-    }
+
+      await tx.auditLog.create({
+        data: {
+          tabel: "ShiftTemplate",
+          recordId: template.id,
+          aksi: "UPDATE",
+          nilaiSebelum: {
+            id: existing.id,
+            nama: existing.nama,
+            jamMulaiMenit: existing.jamMulaiMenit,
+            jamSelesaiMenit: existing.jamSelesaiMenit,
+            lintasHari: existing.lintasHari,
+            hariKerja: existing.hariKerja,
+            aktif: existing.aktif,
+          },
+          nilaiSesudah: {
+            id: template.id,
+            nama: template.nama,
+            jamMulaiMenit: template.jamMulaiMenit,
+            jamSelesaiMenit: template.jamSelesaiMenit,
+            lintasHari: template.lintasHari,
+            hariKerja: template.hariKerja,
+            aktif: template.aktif,
+          },
+          actorId: session.user.id,
+        },
+      });
+
+      return template;
+    });
+
+    return NextResponse.json({
+      id: updated.id,
+      storeId: updated.storeId,
+      nama: updated.nama,
+      jamMulaiMenit: updated.jamMulaiMenit,
+      jamSelesaiMenit: updated.jamSelesaiMenit,
+      lintasHari: updated.lintasHari,
+      hariKerja: updated.hariKerja,
+      aktif: updated.aktif,
+      updatedAt: updated.updatedAt.toISOString(),
+    });
   } catch (err) {
     console.error("PATCH /api/shift-template/[id] error:", err);
-    return NextResponse.json(
-      { error: "Gagal memperbarui template." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Gagal mengubah template shift." }, { status: 500 });
   }
 }
 
 // DELETE /api/shift-template/[id]
-// Soft delete: set aktif=false
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
     if (!ALLOWED_ROLES.includes(session.user.role)) {
       return NextResponse.json(
-        { error: "Role Anda tidak berwenang mengelola shift template." },
+        { error: "Role Anda tidak berwenang menghapus template shift." },
         { status: 403 }
       );
     }
 
     const { id } = await params;
+
     const existing = await prisma.shiftTemplate.findUnique({ where: { id } });
     if (!existing) {
-      return NextResponse.json({ error: "Template tidak ditemukan." }, { status: 404 });
+      return NextResponse.json({ error: "Template shift tidak ditemukan." }, { status: 404 });
     }
 
-    const updated = await prisma.shiftTemplate.update({
-      where: { id },
-      data: { aktif: false },
+    // Cek apakah dipakai di ShiftInstance
+    const usage = await prisma.shiftInstance.count({
+      where: { templateId: id },
     });
-    return NextResponse.json(updated);
+    if (usage > 0) {
+      return NextResponse.json(
+        { error: `Template ini sudah dipakai di ${usage} jadwal shift. Hapus jadwal tersebut terlebih dahulu.` },
+        { status: 409 }
+      );
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.shiftTemplate.delete({ where: { id } });
+
+      await tx.auditLog.create({
+        data: {
+          tabel: "ShiftTemplate",
+          recordId: id,
+          aksi: "DELETE",
+          nilaiSebelum: {
+            id: existing.id,
+            storeId: existing.storeId,
+            nama: existing.nama,
+            jamMulaiMenit: existing.jamMulaiMenit,
+            jamSelesaiMenit: existing.jamSelesaiMenit,
+            lintasHari: existing.lintasHari,
+            hariKerja: existing.hariKerja,
+            aktif: existing.aktif,
+          },
+          actorId: session.user.id,
+        },
+      });
+    });
+
+    return NextResponse.json({ success: true });
   } catch (err) {
     console.error("DELETE /api/shift-template/[id] error:", err);
-    return NextResponse.json(
-      { error: "Gagal menghapus template." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Gagal menghapus template shift." }, { status: 500 });
   }
 }

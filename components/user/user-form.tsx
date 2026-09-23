@@ -31,12 +31,14 @@ type Props =
   | {
       mode: "create";
       stores: Store[];
+      currentUserRole: Role;
     }
   | {
       mode: "edit";
       userId: string;
       initial: InitialUser;
       stores: Store[];
+      currentUserRole: Role;
     };
 
 const ROLE_OPTIONS: Role[] = [
@@ -47,6 +49,11 @@ const ROLE_OPTIONS: Role[] = [
   "MANAJER",
   "DIREKTUR",
 ];
+
+// Roles yang boleh lihat/edit PII (Admin, Manajer, Supervisor)
+function canAccessPII(role: Role): boolean {
+  return ["ADMIN", "MANAJER", "SUPERVISOR"].includes(role);
+}
 
 export function UserForm(props: Props) {
   const router = useRouter();
@@ -76,6 +83,8 @@ export function UserForm(props: Props) {
   );
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const showPII = canAccessPII(props.currentUserRole);
 
   const submit = async () => {
     if (nama.trim().length < 2) {
@@ -239,62 +248,66 @@ export function UserForm(props: Props) {
         </div>
       </div>
 
-      <h3 className="border-t pt-4 text-sm font-semibold">Data Pribadi (Opsional)</h3>
+      {showPII && (
+        <>
+          <h3 className="border-t pt-4 text-sm font-semibold">Data Pribadi (Opsional)</h3>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        <div className="space-y-1">
-          <Label htmlFor="nik">NIK</Label>
-          <Input
-            id="nik"
-            value={nik}
-            onChange={(e) => setNik(e.target.value)}
-            disabled={isSubmitting}
-          />
-        </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="nik">NIK</Label>
+              <Input
+                id="nik"
+                value={nik}
+                onChange={(e) => setNik(e.target.value)}
+                disabled={isSubmitting}
+              />
+            </div>
 
-        <div className="space-y-1">
-          <Label htmlFor="kontakDarurat">Kontak darurat</Label>
-          <Input
-            id="kontakDarurat"
-            value={kontakDarurat}
-            onChange={(e) => setKontakDarurat(e.target.value)}
-            disabled={isSubmitting}
-          />
-        </div>
+            <div className="space-y-1">
+              <Label htmlFor="kontakDarurat">Kontak darurat</Label>
+              <Input
+                id="kontakDarurat"
+                value={kontakDarurat}
+                onChange={(e) => setKontakDarurat(e.target.value)}
+                disabled={isSubmitting}
+              />
+            </div>
 
-        <div className="space-y-1">
-          <Label htmlFor="tempatLahir">Tempat lahir</Label>
-          <Input
-            id="tempatLahir"
-            value={tempatLahir}
-            onChange={(e) => setTempatLahir(e.target.value)}
-            disabled={isSubmitting}
-          />
-        </div>
+            <div className="space-y-1">
+              <Label htmlFor="tempatLahir">Tempat lahir</Label>
+              <Input
+                id="tempatLahir"
+                value={tempatLahir}
+                onChange={(e) => setTempatLahir(e.target.value)}
+                disabled={isSubmitting}
+              />
+            </div>
 
-        <div className="space-y-1">
-          <Label htmlFor="tanggalLahir">Tanggal lahir</Label>
-          <Input
-            id="tanggalLahir"
-            type="date"
-            value={tanggalLahir}
-            onChange={(e) => setTanggalLahir(e.target.value)}
-            disabled={isSubmitting}
-          />
-        </div>
-      </div>
+            <div className="space-y-1">
+              <Label htmlFor="tanggalLahir">Tanggal lahir</Label>
+              <Input
+                id="tanggalLahir"
+                type="date"
+                value={tanggalLahir}
+                onChange={(e) => setTanggalLahir(e.target.value)}
+                disabled={isSubmitting}
+              />
+            </div>
+          </div>
 
-      <div className="space-y-1">
-        <Label htmlFor="alamat">Alamat</Label>
-        <textarea
-          id="alamat"
-          rows={2}
-          value={alamat}
-          onChange={(e) => setAlamat(e.target.value)}
-          disabled={isSubmitting}
-          className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-        />
-      </div>
+          <div className="space-y-1">
+            <Label htmlFor="alamat">Alamat</Label>
+            <textarea
+              id="alamat"
+              rows={2}
+              value={alamat}
+              onChange={(e) => setAlamat(e.target.value)}
+              disabled={isSubmitting}
+              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            />
+          </div>
+        </>
+      )}
 
       <div className="flex gap-2 border-t pt-4">
         <Button type="button" onClick={submit} disabled={isSubmitting}>

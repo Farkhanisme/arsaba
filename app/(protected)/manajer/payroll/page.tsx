@@ -1,0 +1,129 @@
+import { auth } from "@/auth";
+import { redirect } from "next/navigation";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import Link from "next/link";
+import type { Role } from "@prisma/client";
+import PayrollGenerateForm from "./_components/PayrollGenerateForm";
+import PayrollTable from "./_components/PayrollTable";
+import PayrollFilter from "./_components/PayrollFilter";
+
+const ALLOWED_ROLES: Role[] = ["MANAJER"];
+
+function formatRupiah(n: number | null): string {
+  if (n === null) return "—";
+  return "Rp" + n.toLocaleString("id-ID");
+}
+
+export default async function ManajerPayrollPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ periode?: string; status?: string }>;
+}) {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  if (!ALLOWED_ROLES.includes(session.user.role)) {
+    return (
+      <main className="container mx-auto max-w-7xl p-6">
+        <h1 className="text-2xl font-bold">Akses ditolak</h1>
+        <p className="mt-2 text-muted-foreground">
+          Halaman ini hanya untuk Manajer.
+        </p>
+      </main>
+    );
+  }
+
+  const { periode: periodeParam, status: statusParam } = await searchParams;
+
+  // Build API URL with filters
+  const params = new URLSearchParams();
+  if (periodeParam) params.set("periode", periodeParam);
+  if (statusParam) params.set("status", statusParam);
+
+  const apiUrl = `/api/payroll?${params.toString()}`;
+
+  let payrollData: {
+    total: number;
+    items: Array<{
+      id: string;
+      employeeId: string;
+      employee: {
+        id: string;
+        kode: string;
+        nama: string;
+        role: Role;
+        tipePerhitunganGaji: string | null;
+      };
+      periode: string;
+      gajiPokok: number;
+      totalHariKerja: number | null;
+      totalBonusAgenda: number;
+      totalPotonganTelat: number;
+      bonusManual: number;
+      potonganManual: number;
+      bonusPerforma: number;
+      keteranganBonusPerforma: string | null;
+      totalGaji: number;
+      status: string;
+      lockedAt: string | null;
+      lockedById: string | null;
+      createdAt: string;
+      updatedAt: string;
+    }>;
+  } = { total: 0, items: [] };
+
+  try {
+    const res = await fetch(apiUrl, { cache: "no-store" });
+    if (res.ok) {
+      payrollData = await res.json();
+    }
+  } catch {
+    // payrollData stays empty
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">Kelola Payroll Bulanan</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Generate, review, dan lock payroll karyawan per periode.
+        </p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Generate Payroll Baru</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PayrollGenerateForm />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Filter</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PayrollFilter
+            defaultPeriode={periodeParam ?? ""}
+            defaultStatus={statusParam ?? ""}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            Daftar Payroll ({payrollData.total})
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PayrollTable items={payrollData.items} />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

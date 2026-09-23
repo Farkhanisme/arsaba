@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { formatRupiah } from "@/lib/format";
+import EstimasiGajiDashboard from "./_components/EstimasiGajiDashboard";
 
 const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
 
@@ -25,6 +27,7 @@ export default async function DashboardPage() {
   const isKaryawan = role === "KARYAWAN" || role === "KEPALA_TOKO";
   const isVerifikator =
     role === "SUPERVISOR" || role === "ADMIN" || role === "MANAJER";
+  const isManajerAtas = ["DIREKTUR", "MANAJER", "ADMIN", "SUPERVISOR"].includes(role);
 
   return (
     <div className="space-y-6">
@@ -34,6 +37,9 @@ export default async function DashboardPage() {
           Selamat datang, {user.nama}
         </p>
       </div>
+
+      {/* Estimasi Gaji Dashboard - untuk semua role */}
+      <EstimasiGajiDashboard />
 
       {isKaryawan && <KaryawanDashboard userId={user.id} />}
       {isVerifikator && <VerifikatorDashboard />}

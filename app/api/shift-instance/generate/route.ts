@@ -38,6 +38,15 @@ function shiftTimeFromMenit(tanggalUTC: Date, menit: number): Date {
   return new Date(tanggalUTC.getTime() - WIB_OFFSET_MS + menit * 60_000);
 }
 
+// Cek apakah template berlaku untuk tanggal tertentu
+// hariKerja: array Int (0=Minggu, 1=Senin, ..., 6=Sabtu)
+// Array kosong = SEMUA hari
+function templateCocokHari(hariKerja: number[], tanggalUTC: Date): boolean {
+  if (hariKerja.length === 0) return true; // SEMUA hari
+  const hari = tanggalUTC.getUTCDay(); // 0=Minggu..6=Sabtu (UTC date = WIB date untuk date-only)
+  return hariKerja.includes(hari);
+}
+
 // POST /api/shift-instance/generate
 // Body: { storeId, tanggalMulai: "YYYY-MM-DD", jumlahHari: 1-31, modeRotasi: "HARIAN" | "MINGGUAN" }
 export async function POST(request: NextRequest) {
@@ -106,6 +115,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Toko tidak ditemukan." }, { status: 404 });
     }
 
+    // Ambil SEMUA template aktif, filter per hari nanti di loop
     const templates = await prisma.shiftTemplate.findMany({
       where: { storeId, aktif: true },
       orderBy: { jamMulaiMenit: "asc" },
@@ -126,28 +136,20 @@ export async function POST(request: NextRequest) {
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       select: { id: true, nama: true },
     });
-    if (employees.length < templates.length) {
+    if (employees.length === 0) {
       return NextResponse.json(
-        {
-          error: `Jumlah karyawan aktif (${employees.length}) kurang dari jumlah shift (${templates.length}).`,
-        },
+        { error: "Tidak ada karyawan aktif di toko ini." },
         { status: 400 }
       );
     }
 
-    const kapasitasPerShift = Math.floor(employees.length / templates.length);
-    if (kapasitasPerShift < 1) {
-      return NextResponse.json(
-        { error: "Kapasitas per shift kurang dari 1. Periksa jumlah karyawan." },
-        { status: 400 }
-      );
-    }
-
+    // Build tanggalList
     const tanggalList: Date[] = [];
     for (let i = 0; i < jumlahHari; i++) {
       tanggalList.push(new Date(tanggalMulai.getTime() + i * HARI_MS));
     }
 
+    // Cek conflict untuk SEMUA tanggal di range
     const conflict = await prisma.shiftInstance.findFirst({
       where: { storeId, tanggal: { in: tanggalList } },
       select: { tanggal: true },
@@ -167,6 +169,7 @@ export async function POST(request: NextRequest) {
     const floatingPerHari: Array<{
       tanggal: string;
       employees: Array<{ id: string; nama: string }>;
+      reason?: string; // "LIBUR" kalau tidak ada template cocok
     }> = [];
 
     const created = await prisma.$transaction(
@@ -191,10 +194,33 @@ export async function POST(request: NextRequest) {
           if (!tanggalUTC) continue;
           const tanggalUTCValue = tanggalUTC;
 
+          // Filter template yang cocok untuk hari ini
+          const templatesHariIni = templates.filter((t) =>
+            templateCocokHari(t.hariKerja, tanggalUTCValue)
+          );
+
+          if (templatesHariIni.length === 0) {
+            // Hari libur / tidak ada shift: semua karyawan floating
+            floatingPerHari.push({
+              tanggal: formatTanggalUTC(tanggalUTCValue),
+              employees: employees.map((e) => ({ id: e.id, nama: e.nama })),
+              reason: "LIBUR",
+            });
+            continue;
+          }
+
+          // Validasi kapasitas per hari ini
+          const kapasitasPerShift = Math.floor(employees.length / templatesHariIni.length);
+          if (kapasitasPerShift < 1) {
+            throw new Error(
+              `Karyawan (${employees.length}) kurang dari shift hari ${formatTanggalUTC(tanggalUTCValue)} (${templatesHariIni.length} shift).`
+            );
+          }
+
           const rotationStep = modeRotasi === "MINGGUAN" ? Math.floor(i / 7) : i;
           const rotationOffset = (rotationStep * kapasitasPerShift) % employees.length;
 
-          const totalAssignedThisDay = kapasitasPerShift * templates.length;
+          const totalAssignedThisDay = kapasitasPerShift * templatesHariIni.length;
           const assignedEmployeeIds: string[] = [];
           for (let k = 0; k < totalAssignedThisDay; k++) {
             const idx = (rotationOffset + k) % employees.length;
@@ -208,8 +234,8 @@ export async function POST(request: NextRequest) {
             employees: floating.map((e) => ({ id: e.id, nama: e.nama })),
           });
 
-          for (let t = 0; t < templates.length; t++) {
-            const template = templates[t];
+          for (let t = 0; t < templatesHariIni.length; t++) {
+            const template = templatesHariIni[t];
             if (!template) continue;
 
             const jamMulai = shiftTimeFromMenit(tanggalUTC, template.jamMulaiMenit);
@@ -312,9 +338,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (err) {
     console.error("POST /api/shift-instance/generate error:", err);
-    return NextResponse.json(
-      { error: "Gagal membuat jadwal otomatis." },
-      { status: 500 }
-    );
+    const msg = err instanceof Error ? err.message : "Gagal membuat jadwal otomatis.";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

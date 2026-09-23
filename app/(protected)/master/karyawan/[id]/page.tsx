@@ -89,6 +89,7 @@ export default async function MasterKaryawanEditPage({
             mode="edit"
             userId={user.id}
             stores={stores}
+            currentUserRole={session.user.role}
             initial={{
               kode: user.kode,
               nama: user.nama,

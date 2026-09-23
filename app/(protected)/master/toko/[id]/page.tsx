@@ -3,7 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { StoreForm } from "@/components/store/store-form";
+import { ShiftTemplateList } from "@/components/shift-template/shift-template-list";
 import type { Role } from "@prisma/client";
 
 const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
@@ -71,6 +73,18 @@ export default async function AdminTokoEditPage({
               pamEnabled: store.pamEnabled,
             }}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex items-center justify-between">
+          <CardTitle className="text-base">Template Shift</CardTitle>
+          <Link href={`/master/toko/${store.id}/shift-template/baru`}>
+            <Button size="sm">Tambah Template</Button>
+          </Link>
+        </CardHeader>
+        <CardContent>
+          <ShiftTemplateList storeId={store.id} />
         </CardContent>
       </Card>
     </div>
