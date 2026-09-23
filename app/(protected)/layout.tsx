@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { Navbar } from "@/components/layout/navbar";
+import { PageTransition } from "@/components/ui/page-transition";
 
 export default async function ProtectedLayout({
   children,
@@ -21,7 +22,9 @@ export default async function ProtectedLayout({
           role: session.user.role,
         }}
       />
-      <main className="container mx-auto max-w-5xl px-4 py-6">{children}</main>
+      <main className="container mx-auto max-w-5xl px-4 py-6">
+        <PageTransition>{children}</PageTransition>
+      </main>
     </div>
   );
 }

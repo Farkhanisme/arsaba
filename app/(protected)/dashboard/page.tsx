@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatRupiah } from "@/lib/format";
 import EstimasiGajiDashboard from "./_components/EstimasiGajiDashboard";
+import { Accordion, AccordionItem } from "@/components/ui/accordion";
+import { StatsBar } from "@/components/ui/stats-bar";
 
 const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
 
@@ -29,27 +31,50 @@ export default async function DashboardPage() {
     role === "SUPERVISOR" || role === "ADMIN" || role === "MANAJER";
   const isManajerAtas = ["DIREKTUR", "MANAJER", "ADMIN", "SUPERVISOR"].includes(role);
 
+  // Fetch stats for StatsBar
+  const activeEmployees = await prisma.user.count({
+    where: { status: "AKTIF", tipePerhitunganGaji: { not: null } },
+  });
+  const totalEstimasi = await prisma.$queryRaw<[{ total: bigint }]>`
+    SELECT COALESCE(SUM("totalGaji"), 0) as total
+    FROM "Payroll"
+    WHERE "status" = 'DRAFT'
+  `;
+  const now = new Date();
+  const currentPeriode = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Beranda</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Selamat datang, {user.nama}
-        </p>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold">Beranda</h1>
+          <p className="text-sm text-muted-foreground">Selamat datang, {user.nama}</p>
+        </div>
       </div>
 
-      {/* Estimasi Gaji Dashboard - untuk semua role */}
-      <EstimasiGajiDashboard />
+      {/* Quick Stats Bar */}
+      <StatsBar
+        totalEstimasi={Number(totalEstimasi[0]?.total || 0)}
+        totalKaryawan={activeEmployees}
+        periode={currentPeriode}
+      />
 
-      {isKaryawan && <KaryawanDashboard userId={user.id} />}
-      {isVerifikator && <VerifikatorDashboard />}
-      {role === "DIREKTUR" && (
-        <Card>
-          <CardContent className="pt-6 text-sm text-muted-foreground">
-            Dashboard Direktur akan tersedia setelah modul laporan selesai.
-          </CardContent>
-        </Card>
-      )}
+      <Accordion type="single" className="space-y-3">
+        {/* Estimasi Gaji Dashboard - untuk semua role */}
+        <AccordionItem value="estimasi-gaji" trigger="Estimasi Gaji" content={<EstimasiGajiDashboard />} />
+
+        {isKaryawan && (
+          <AccordionItem value="absensi" trigger="Status Absensi" content={<KaryawanDashboard userId={user.id} />} />
+        )}
+
+        {isVerifikator && (
+          <AccordionItem value="verifikasi" trigger="Verifikasi Absensi" content={<VerifikatorDashboard />} />
+        )}
+
+        {role === "DIREKTUR" && (
+          <AccordionItem value="direktur" trigger="Dashboard Direktur" content={<Card density="compact"><CardContent className="pt-4 text-sm text-muted-foreground">Dashboard Direktur akan tersedia setelah modul laporan selesai.</CardContent></Card>} />
+        )}
+      </Accordion>
     </div>
   );
 }

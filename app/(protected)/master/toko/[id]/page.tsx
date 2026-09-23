@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StoreForm } from "@/components/store/store-form";
 import { ShiftTemplateList } from "@/components/shift-template/shift-template-list";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import type { Role } from "@prisma/client";
 
 const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
@@ -46,12 +47,7 @@ export default async function AdminTokoEditPage({
 
   return (
     <div className="space-y-6">
-      <Link
-        href="/master/toko"
-        className="text-sm text-muted-foreground hover:underline"
-      >
-        ← Kembali ke daftar
-      </Link>
+      <Breadcrumb autoGenerate />
 
       <div>
         <h1 className="text-2xl font-bold">Edit Toko</h1>

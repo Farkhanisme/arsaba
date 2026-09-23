@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Role } from "@prisma/client";
 import { ShiftTemplateForm } from "@/components/shift-template/shift-template-form";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 
 const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
 
@@ -47,12 +48,7 @@ export default async function ShiftTemplateCreatePage({
 
   return (
     <div className="space-y-6">
-      <Link
-        href={`/master/toko/${store.id}/shift-template`}
-        className="text-sm text-muted-foreground hover:underline"
-      >
-        ← Kembali ke Daftar Template
-      </Link>
+      <Breadcrumb autoGenerate />
 
       <div>
         <h1 className="text-2xl font-bold">Buat Template Shift Baru</h1>

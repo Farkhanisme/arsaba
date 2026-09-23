@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LogCard } from "@/components/verifikasi/log-card";
 import { OverrideKeluarForm } from "@/components/verifikasi/override-keluar-form";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 
 const ALLOWED_ROLES = ["SUPERVISOR", "ADMIN", "MANAJER"];
 const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
@@ -73,9 +74,8 @@ export default async function VerifikasiAbsensiDetailPage({
 
   return (
     <main className="container mx-auto max-w-3xl p-6">
-      <Link href="/verifikasi/absensi" className="text-sm text-muted-foreground hover:underline">
-        ← Kembali ke daftar
-      </Link>
+      <Breadcrumb autoGenerate />
+
       <h1 className="mt-2 text-2xl font-bold">{attendance.employee.nama}</h1>
       <p className="text-sm text-muted-foreground">{attendance.store.nama}</p>
 

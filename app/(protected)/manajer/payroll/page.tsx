@@ -9,6 +9,7 @@ import type { Role } from "@prisma/client";
 import PayrollGenerateForm from "./_components/PayrollGenerateForm";
 import PayrollTable from "./_components/PayrollTable";
 import PayrollFilter from "./_components/PayrollFilter";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 
 const ALLOWED_ROLES: Role[] = ["MANAJER"];
 
@@ -86,6 +87,8 @@ export default async function ManajerPayrollPage({
 
   return (
     <div className="space-y-6">
+      <Breadcrumb autoGenerate />
+
       <div>
         <h1 className="text-2xl font-bold">Kelola Payroll Bulanan</h1>
         <p className="mt-1 text-sm text-muted-foreground">

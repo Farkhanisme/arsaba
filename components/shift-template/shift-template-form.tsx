@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { HariKerjaPicker } from "./hari-kerja-picker";
+import { TimePicker } from "@/components/ui/time-picker";
 
 type Props =
   | {
@@ -152,23 +153,23 @@ export function ShiftTemplateForm(props: Props) {
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1">
-          <Label htmlFor="jam-mulai">Jam Mulai</Label>
-          <Input
+          <TimePicker
             id="jam-mulai"
-            type="time"
+            label="Jam Mulai"
             value={jamMulai}
-            onChange={(e) => handleJamMulaiChange(e.target.value)}
+            onChange={handleJamMulaiChange}
             disabled={isSubmitting}
+            required
           />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="jam-selesai">Jam Selesai</Label>
-          <Input
+          <TimePicker
             id="jam-selesai"
-            type="time"
+            label="Jam Selesai"
             value={jamSelesai}
-            onChange={(e) => handleJamSelesaiChange(e.target.value)}
+            onChange={handleJamSelesaiChange}
             disabled={isSubmitting}
+            required
           />
         </div>
       </div>

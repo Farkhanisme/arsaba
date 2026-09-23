@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { Role } from "@prisma/client";
 import { ShiftTemplateList } from "@/components/shift-template/shift-template-list";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 
 const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
 
@@ -48,12 +49,7 @@ export default async function ShiftTemplateListPage({
 
   return (
     <div className="space-y-6">
-      <Link
-        href={`/master/toko/${store.id}`}
-        className="text-sm text-muted-foreground hover:underline"
-      >
-        ← Kembali ke Detail Toko
-      </Link>
+      <Breadcrumb autoGenerate />
 
       <div className="flex items-center justify-between gap-4">
         <div>

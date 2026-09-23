@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import type { Role } from "@prisma/client";
 import PayrollDetailClient from "./_components/PayrollDetailClient";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 
 const ALLOWED_ROLES: Role[] = ["MANAJER"];
 
@@ -88,6 +89,9 @@ export default async function ManajerPayrollDetailPage({
   }
 
   return (
-    <PayrollDetailClient initialData={payrollData} />
+    <>
+      <Breadcrumb autoGenerate />
+      <PayrollDetailClient initialData={payrollData} />
+    </>
   );
 }

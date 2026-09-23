@@ -127,3 +127,149 @@
     @apply font-sans;
     }
 }
+
+@layer utilities {
+  /* Card hover effects */
+  .card-interactive {
+    @apply transition-all duration-200 ease-out;
+  }
+  .card-interactive:hover {
+    @apply shadow-lg -translate-y-0.5;
+  }
+  .card-interactive:active {
+    @apply shadow-sm translate-y-0 transition-none;
+  }
+  
+  /* Button micro-interactions */
+  .btn-interactive {
+    @apply transition-all duration-100 ease-out;
+  }
+  .btn-interactive:active {
+    @apply scale-[0.98] transition-none;
+  }
+  .btn-interactive:focus-visible {
+    @apply ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+  
+  /* Ripple effect for buttons */
+  .btn-ripple {
+    @apply relative overflow-hidden;
+  }
+  .btn-ripple::after {
+    content: "";
+    @apply absolute inset-0 bg-current opacity-10 rounded-full scale-0 transition-transform duration-300 ease-out;
+    pointer-events: none;
+  }
+  .btn-ripple:active::after {
+    @apply scale-100 transition-none;
+  }
+  
+  /* Input focus ring animations */
+  .input-focus-ring {
+    @apply transition-all duration-100 ease-out;
+  }
+  .input-focus-ring:focus {
+    @apply ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+  .input-focus-ring:focus-visible {
+    @apply ring-2 ring-ring ring-offset-2 ring-offset-background outline-none;
+  }
+  
+  /* Skeleton shimmer animation */
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .animate-shimmer {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 25%,
+      hsl(var(--muted) / 0.5) 50%,
+      hsl(var(--muted)) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+  
+  /* Smooth scroll */
+  .scroll-smooth {
+    scroll-behavior: smooth;
+  }
+  
+  /* Tap highlight for mobile */
+  .tap-highlight {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Toast Enhancement Styles */
+  .cn-toast {
+    @apply border-2 border-gray-200 rounded-lg shadow-sm transition-all duration-200;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .cn-toast.success {
+    @apply border-green-500 bg-green-50 text-green-800;
+  }
+
+  .cn-toast.destructive {
+    @apply border-red-500 bg-red-50 text-red-800;
+  }
+
+  .cn-toast.warning {
+    @apply border-amber-500 bg-amber-50 text-amber-800;
+  }
+
+  .cn-toast.info {
+    @apply border-blue-500 bg-blue-50 text-blue-800;
+  }
+
+  .cn-toast [data-description] {
+    @apply text-gray-700;
+  }
+
+  .cn-toast [data-title] {
+    @apply font-medium text-gray-900;
+  }
+
+  .cn-toast .sonner-loader {
+    @apply fill-current;
+  }
+  .tap-highlight:active {
+    @apply bg-accent;
+  }
+  
+  /* Stagger animation for lists */
+  .stagger-in > * {
+    @apply opacity-0 animate-in fade-in-0 slide-in-from-bottom-2;
+  }
+  .stagger-in > *:nth-child(1) { animation-delay: 50ms; }
+  .stagger-in > *:nth-child(2) { animation-delay: 100ms; }
+  .stagger-in > *:nth-child(3) { animation-delay: 150ms; }
+  .stagger-in > *:nth-child(4) { animation-delay: 200ms; }
+  .stagger-in > *:nth-child(5) { animation-delay: 250ms; }
+  .stagger-in > *:nth-child(6) { animation-delay: 300ms; }
+  
+  /* Focus visible ring */
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+  
+  /* Scale on hover/tap */
+  .scale-hover:hover {
+    @apply scale-[1.02];
+  }
+  .scale-tap:active {
+    @apply scale-[0.98];
+  }
+  
+  /* Shadow depth transitions */
+  .shadow-depth-1 { @apply shadow-sm transition-shadow duration-200; }
+  .shadow-depth-2 { @apply shadow-md transition-shadow duration-200; }
+  .shadow-depth-3 { @apply shadow-lg transition-shadow duration-200; }
+  .shadow-depth-4 { @apply shadow-xl transition-shadow duration-200; }
+  .shadow-depth-1:hover { @apply shadow-md; }
+  .shadow-depth-2:hover { @apply shadow-lg; }
+  .shadow-depth-3:hover { @apply shadow-xl; }
+  .shadow-depth-4:hover { @apply shadow-2xl; }
+}

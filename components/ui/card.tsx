@@ -4,14 +4,19 @@ import { cn } from "cn"
 function Card({
   className,
   size = "default",
+  density = "comfortable",
+  interactive = true,
   ...props
-}: React.ComponentProps<"div"> & { size?: "default" | "sm" }) {
+}: React.ComponentProps<"div"> & { size?: "default" | "sm"; density?: "comfortable" | "compact"; interactive?: boolean }) {
   return (
     <div
       data-slot="card"
       data-size={size}
+      data-density={density}
       className={cn(
         "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-sm text-card-foreground ring-1 ring-foreground/10 [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
+        "data-[density=compact]:[--card-spacing:--spacing(2)] data-[density=compact]:py-2 data-[density=compact]:text-xs",
+        interactive && "card-interactive shadow-depth-1",
         className
       )}
       {...props}

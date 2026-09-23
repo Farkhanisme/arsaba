@@ -4,10 +4,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 const ALLOWED_ROLES = ["ADMIN", "MANAJER", "SUPERVISOR"];
 
-// POST /api/store/[storeId]/shift-template
+// POST /api/store/[id]/shift-template
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ storeId: string }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth();
@@ -21,7 +21,7 @@ export async function POST(
       );
     }
 
-    const { storeId } = await params;
+    const { id: storeId } = await params;
 
     const store = await prisma.store.findUnique({ where: { id: storeId } });
     if (!store) {
@@ -146,7 +146,7 @@ export async function POST(
       { status: 201 }
     );
   } catch (err) {
-    console.error("POST /api/store/[storeId]/shift-template error:", err);
+    console.error("POST /api/store/[id]/shift-template error:", err);
     return NextResponse.json({ error: "Gagal membuat template shift." }, { status: 500 });
   }
 }

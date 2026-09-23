@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { UserForm } from "@/components/user/user-form";
 import { ResetPasswordForm } from "@/components/user/reset-password-form";
 import type { Role } from "@prisma/client";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 
 const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
 const RESETTABLE_TARGET_ROLES: Role[] = [
@@ -68,12 +69,7 @@ export default async function MasterKaryawanEditPage({
 
   return (
     <div className="space-y-6">
-      <Link
-        href="/master/karyawan"
-        className="text-sm text-muted-foreground hover:underline"
-      >
-        ← Kembali ke daftar
-      </Link>
+      <Breadcrumb autoGenerate />
 
       <div>
         <h1 className="text-2xl font-bold">Edit Karyawan</h1>

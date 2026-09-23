@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 
 const ALLOWED_ROLES = ["SUPERVISOR", "ADMIN", "MANAJER"];
 const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
@@ -53,6 +54,8 @@ export default async function VerifikasiAbsensiPage() {
 
   return (
     <main className="container mx-auto max-w-3xl p-6">
+      <Breadcrumb autoGenerate />
+
       <h1 className="text-2xl font-bold">Verifikasi Absensi</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         {daftar.length} absensi menunggu verifikasi

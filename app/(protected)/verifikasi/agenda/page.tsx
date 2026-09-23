@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Role } from "@prisma/client";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 
 const ALLOWED_ROLES: Role[] = ["SUPERVISOR", "ADMIN", "MANAJER"];
 
@@ -54,6 +55,8 @@ export default async function VerifikasiAgendaPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb autoGenerate />
+
       <div>
         <h1 className="text-2xl font-bold">Verifikasi Agenda</h1>
         <p className="mt-1 text-sm text-muted-foreground">
