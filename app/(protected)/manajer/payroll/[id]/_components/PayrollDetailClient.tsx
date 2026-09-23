@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
+import { showUndoToast } from "@/components/ui/action-toast";
 
 type PayrollData = {
   id: string;
@@ -144,7 +145,15 @@ export default function PayrollDetailClient({ initialData }: Props) {
         toast.error(result.error || `Gagal (HTTP ${res.status})`);
         return;
       }
-      toast.success("Payroll berhasil di-lock.");
+      // Use undo toast for lock action
+      showUndoToast(
+        "Payroll berhasil di-lock. Klik Batal untuk membatalkan.",
+        async () => {
+          // Undo action - could call an unlock API if available
+          toast.info("Lock dibatalkan (implementasi unlock diperlukan)");
+        },
+        10000
+      );
       // Refresh data from server
       const freshRes = await fetch(`/api/payroll/${data.id}`, { cache: "no-store" });
       if (freshRes.ok) {

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { Role } from "@prisma/client";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 
 const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
 
@@ -52,6 +53,8 @@ export default async function KelolaAgendaPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb autoGenerate />
+
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Kelola Template Agenda</h1>

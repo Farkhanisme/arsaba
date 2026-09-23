@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { GajiForm } from "@/components/user/gaji-form";
 import type { Role } from "@prisma/client";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 
 const ALLOWED_ROLES: Role[] = ["MANAJER"];
 const TARGET_ROLES: Role[] = ["SUPERVISOR", "ADMIN", "KEPALA_TOKO", "KARYAWAN"];
@@ -49,6 +50,8 @@ export default async function ManajerGajiPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb autoGenerate />
+
       <div>
         <h1 className="text-2xl font-bold">Kelola Gaji Karyawan</h1>
         <p className="mt-1 text-sm text-muted-foreground">

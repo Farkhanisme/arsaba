@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { GenerateForm } from "@/components/jadwal/generate-form";
 import type { Role } from "@prisma/client";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 
 const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
 
@@ -31,6 +32,8 @@ export default async function GenerateJadwalPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb autoGenerate />
+
       <Link
         href="/jadwal"
         className="text-sm text-muted-foreground hover:underline"

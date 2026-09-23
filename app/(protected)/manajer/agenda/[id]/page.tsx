@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AssignForm } from "@/components/agenda/assign-form";
 import { NominalTemplateForm } from "@/components/agenda/nominal-template-form";
 import type { Role } from "@prisma/client";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 
 const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
 
@@ -82,6 +83,8 @@ export default async function DetailTemplatePage({
 
   return (
     <div className="space-y-6">
+      <Breadcrumb autoGenerate />
+
       <Link
         href="/manajer/agenda"
         className="text-sm text-muted-foreground hover:underline"

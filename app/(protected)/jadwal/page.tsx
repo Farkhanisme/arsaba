@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { FilterJadwal } from "@/components/jadwal/filter-jadwal";
 import { ApproveInstanceButton } from "@/components/jadwal/approve-instance-button";
 import type { Role } from "@prisma/client";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 
 const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
 
@@ -150,6 +151,8 @@ export default async function JadwalPage({
 
   return (
     <div className="space-y-6">
+      <Breadcrumb autoGenerate />
+
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Jadwal Shift</h1>

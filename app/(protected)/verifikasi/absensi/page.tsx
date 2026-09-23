@@ -53,7 +53,7 @@ export default async function VerifikasiAbsensiPage() {
   });
 
   return (
-    <main className="container mx-auto max-w-3xl p-6">
+    <main className="container mx-auto max-w-5xl">
       <Breadcrumb autoGenerate />
 
       <h1 className="text-2xl font-bold">Verifikasi Absensi</h1>

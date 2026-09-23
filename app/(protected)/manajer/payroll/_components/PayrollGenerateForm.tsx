@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { showProgressToast, completeProgressToast, showSuccessWithAction } from "@/components/ui/action-toast";
 
 export default function PayrollGenerateForm() {
   const router = useRouter();
@@ -25,6 +26,8 @@ export default function PayrollGenerateForm() {
     }
 
     setIsSubmitting(true);
+    const progressToast = showProgressToast({ message: "Memproses generate payroll...", isLoading: true });
+    
     try {
       const res = await fetch("/api/payroll/generate", {
         method: "POST",
@@ -33,15 +36,19 @@ export default function PayrollGenerateForm() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error || `Gagal (HTTP ${res.status})`);
+        completeProgressToast(false, data.error || `Gagal (HTTP ${res.status})`);
         return;
       }
-      toast.success(
-        `Generate selesai: ${data.totalGenerated} diproses, ${data.totalSkipped} di-skip (sudah ada)`
+      completeProgressToast(true, `Generate selesai: ${data.totalGenerated} diproses, ${data.totalSkipped} di-skip`);
+      // Show success with action to view payroll
+      showSuccessWithAction(
+        `Generate selesai: ${data.totalGenerated} diproses, ${data.totalSkipped} di-skip`,
+        "Lihat Payroll",
+        () => router.push("/manajer/payroll"),
+        10000
       );
-      router.refresh();
     } catch {
-      toast.error("Terjadi kesalahan jaringan.");
+      completeProgressToast(false, "Terjadi kesalahan jaringan.");
     } finally {
       setIsSubmitting(false);
     }

@@ -7,6 +7,7 @@ import { formatRupiah } from "@/lib/format";
 import EstimasiGajiDashboard from "./_components/EstimasiGajiDashboard";
 import { Accordion, AccordionItem } from "@/components/ui/accordion";
 import { StatsBar } from "@/components/ui/stats-bar";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 
 const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
 
@@ -45,6 +46,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-4">
+      <Breadcrumb autoGenerate />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">Beranda</h1>

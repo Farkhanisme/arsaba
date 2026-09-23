@@ -7,7 +7,7 @@ import { PageTransition } from "@/components/ui/page-transition";
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata = {
-  title: "Arsaba V2",
+  title: "Arsaba",
   description: "Aplikasi Absensi & Audit Penjualan Multi-Toko",
 };
 

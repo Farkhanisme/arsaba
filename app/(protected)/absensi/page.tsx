@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { AbsensiForm } from "@/components/absensi/absensi-form";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 
 const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
 
@@ -40,6 +41,7 @@ export default async function AbsensiPage() {
 
   return (
     <main className="container mx-auto max-w-xl p-6">
+      <Breadcrumb autoGenerate />
       <h1 className="text-2xl font-bold">Absensi</h1>
       {shiftAktif && (
         <p className="mt-2 text-sm text-muted-foreground">

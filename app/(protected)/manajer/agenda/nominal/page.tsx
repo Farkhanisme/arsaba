@@ -12,6 +12,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { showProgressToast, completeProgressToast, showSuccessWithAction } from "@/components/ui/action-toast";
 
 type AgendaItem = {
   id: string;
@@ -79,6 +81,8 @@ export default function NominalAgendaPage() {
     }
 
     setIsBatchSubmitting(true);
+    const progressToast = showProgressToast({ message: "Memproses batch nominal...", isLoading: true });
+    
     try {
       const body: Record<string, unknown> = { nominal: n };
       if (batchSumber) body.sumber = batchSumber;
@@ -91,15 +95,19 @@ export default function NominalAgendaPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error || `Gagal (HTTP ${res.status})`);
+        completeProgressToast(false, data.error || `Gagal (HTTP ${res.status})`);
         return;
       }
-      toast.success(`Berhasil set nominal ke ${data.updated} agenda.`);
+      completeProgressToast(true, `Berhasil set nominal ke ${data.updated} agenda.`);
+      showSuccessWithAction(
+        `Berhasil set nominal ke ${data.updated} agenda.`,
+        "Refresh",
+        () => { router.refresh(); load(); },
+        10000
+      );
       setBatchNominal("");
-      router.refresh();
-      load();
     } catch {
-      toast.error("Terjadi kesalahan jaringan.");
+      completeProgressToast(false, "Terjadi kesalahan jaringan.");
     } finally {
       setIsBatchSubmitting(false);
     }
@@ -107,6 +115,8 @@ export default function NominalAgendaPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb autoGenerate />
+
       <div>
         <h1 className="text-2xl font-bold">Set Nominal Agenda</h1>
         <p className="mt-1 text-sm text-muted-foreground">

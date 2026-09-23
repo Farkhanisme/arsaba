@@ -16,6 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 
 const schema = z.object({
   judul: z.string().min(3, "Judul minimal 3 karakter"),
@@ -73,6 +74,8 @@ export default function BikinAgendaBaruPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb autoGenerate />
+
       <div>
         <h1 className="text-2xl font-bold">Bikin Template Agenda</h1>
         <p className="mt-1 text-sm text-muted-foreground">

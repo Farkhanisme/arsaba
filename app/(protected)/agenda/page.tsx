@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SelesaiForm } from "@/components/agenda/selesai-form";
 import { LaporMandiriForm } from "@/components/agenda/lapor-mandiri-form";
 import type { Role } from "@prisma/client";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 
 const ALLOWED_ROLES: Role[] = ["KARYAWAN", "KEPALA_TOKO"];
 
@@ -57,6 +58,8 @@ export default async function AgendaPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb autoGenerate />
+
       <div>
         <h1 className="text-2xl font-bold">Agenda Saya</h1>
         <p className="mt-1 text-sm text-muted-foreground">
