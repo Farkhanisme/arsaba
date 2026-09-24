@@ -10,6 +10,7 @@
 - `npm run start` — start production build (`next start`). Script tersedia di package.json.
 - `npm run lint` — run linter (`next lint`). Script tersedia di package.json.
 - `npx prisma generate` — generate Prisma client. Harus ditempatkan setelah schema.model terdefinisi.
+- **Setelah `prisma generate`: restart `npm run dev`** — proses dev (Turbopack) meng-cache modul `@prisma/client` di memori; model baru (mis. `Izin`) tidak terbaca sampai server di-restart (gejala: `prisma.<model>` undefined di runtime padahal client di disk sudah lengkap).
 - `npx tsx <file>.ts` — jalankan script TypeScript standalone (di luar Next.js). **WAJIB** pakai `--env-file=.env` agar environment variables dari `.env` terbaca, karena Next.js otomatis load `.env` tapi `tsx` standalone tidak.
 
 ## Menjalankan script mandiri
