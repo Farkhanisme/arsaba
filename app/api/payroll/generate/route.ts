@@ -117,15 +117,15 @@ export async function POST(request: NextRequest) {
     // Pre-fetch data untuk perhitungan batch
     const employeeIds = karyawanList.map((k) => k.id);
 
-    // 1. Attendance: totalHariKerja (COUNT statusMasuk = DIVERIFIKASI) dan totalMenitKerja (SUM)
+    // 1. Attendance: totalHariKerja (jumlah tanggalShift unik DIVERIFIKASI) dan totalMenitKerja (SUM).
+    // Segmen PAM ganda di hari yang sama tetap dihitung 1 hari.
     const attendanceAgg = await prisma.attendance.groupBy({
-      by: ["employeeId"],
+      by: ["employeeId", "tanggalShift"],
       where: {
         employeeId: { in: employeeIds },
         tanggalShift: { gte: awalBulan, lt: akhirBulan },
         statusMasuk: "DIVERIFIKASI",
       },
-      _count: { id: true },
       _sum: { totalMenitKerja: true, potongan: true },
     });
 
@@ -135,11 +135,15 @@ export async function POST(request: NextRequest) {
       { totalHariKerja: number; totalMenitKerja: number; totalPotonganTelat: number }
     >();
     for (const a of attendanceAgg) {
-      attendanceMap.set(a.employeeId, {
-        totalHariKerja: a._count.id,
-        totalMenitKerja: a._sum.totalMenitKerja ?? 0,
-        totalPotonganTelat: a._sum.potongan ?? 0,
-      });
+      const cur = attendanceMap.get(a.employeeId) ?? {
+        totalHariKerja: 0,
+        totalMenitKerja: 0,
+        totalPotonganTelat: 0,
+      };
+      cur.totalHariKerja += 1;
+      cur.totalMenitKerja += a._sum.totalMenitKerja ?? 0;
+      cur.totalPotonganTelat += a._sum.potongan ?? 0;
+      attendanceMap.set(a.employeeId, cur);
     }
 
     // 2. Agenda: totalBonusAgenda (SUM nominal where status = DIVERIFIKASI, targetEmployeeId, diselesaikanPada di bulan)

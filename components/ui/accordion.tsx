@@ -174,38 +174,27 @@ function AccordionContent({
   onAnimationEnd?: () => void;
   className?: string;
 }) {
-  const contentRef = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    if (!contentRef.current) return;
-    
-    const content = contentRef.current;
-    if (isOpen) {
-      content.style.maxHeight = content.scrollHeight + "px";
-      content.style.opacity = "1";
-    } else {
-      content.style.maxHeight = "0px";
-      content.style.opacity = "0";
-    }
-  }, [isOpen]);
-
   return (
     <div
-      ref={contentRef}
       id={`accordion-content-${value}`}
       role="region"
       aria-labelledby={`accordion-trigger-${value}`}
-      className={cn(
-        "overflow-hidden transition-all duration-200 ease-out",
-        isOpen ? "max-h-96 opacity-100" : "max-h-0 opacity-0",
-        className
-      )}
+      className={cn("overflow-hidden", className)}
+      style={{
+        display: "grid",
+        gridTemplateRows: isOpen ? "1fr" : "0fr",
+        opacity: isOpen ? 1 : 0,
+        transition:
+          "grid-template-rows 200ms ease-out, opacity 200ms ease-out",
+      }}
       onTransitionEnd={onAnimationEnd}
       data-state={isOpen ? "open" : "closed"}
       data-slot="accordion-content"
     >
-      <div className="px-4 pb-4 pt-2 text-sm text-muted-foreground">
-        {children}
+      <div className="min-h-0 overflow-hidden">
+        <div className="px-4 pb-4 pt-2 text-sm text-muted-foreground">
+          {children}
+        </div>
       </div>
     </div>
   );

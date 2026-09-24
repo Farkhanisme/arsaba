@@ -13,7 +13,7 @@ interface StatsBarProps {
 
 export function StatsBar({ totalEstimasi, totalKaryawan, periode, className }: StatsBarProps) {
   return (
-    <div className={cn("sticky top-4 z-10 mb-4 flex flex-col sm:flex-row gap-3", className)}>
+    <div className={cn("mb-4 flex flex-col sm:flex-row gap-3", className)}>
       <Card density="compact" className="flex-1 min-w-0">
         <CardContent className="pt-3 pb-3">
           <div className="flex items-center justify-between">

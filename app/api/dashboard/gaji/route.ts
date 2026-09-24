@@ -98,15 +98,17 @@ export async function GET(request: NextRequest) {
 
       const employeeIds = karyawanList.map((k) => k.id);
 
-      // 1. Attendance agregat per karyawan
+      // 1. Attendance agregat per karyawan.
+      // totalHariKerja = jumlah tanggalShift unik (DIVERIFIKASI).
+      // Segmen PAM ganda di hari yang sama tetap dihitung 1 hari;
+      // totalMenitKerja & potongan tetap di-SUM dari semua segmen.
       const attendanceAgg = await prisma.attendance.groupBy({
-        by: ["employeeId"],
+        by: ["employeeId", "tanggalShift"],
         where: {
           employeeId: { in: employeeIds },
           tanggalShift: { gte: awalBulan, lt: akhirBulan },
           statusMasuk: "DIVERIFIKASI",
         },
-        _count: { id: true },
         _sum: { totalMenitKerja: true, potongan: true },
       });
 
@@ -115,11 +117,15 @@ export async function GET(request: NextRequest) {
         { totalHariKerja: number; totalMenitKerja: number; totalPotonganTelat: number }
       >();
       for (const a of attendanceAgg) {
-        attendanceMap.set(a.employeeId, {
-          totalHariKerja: a._count.id,
-          totalMenitKerja: a._sum.totalMenitKerja ?? 0,
-          totalPotonganTelat: a._sum.potongan ?? 0,
-        });
+        const cur = attendanceMap.get(a.employeeId) ?? {
+          totalHariKerja: 0,
+          totalMenitKerja: 0,
+          totalPotonganTelat: 0,
+        };
+        cur.totalHariKerja += 1;
+        cur.totalMenitKerja += a._sum.totalMenitKerja ?? 0;
+        cur.totalPotonganTelat += a._sum.potongan ?? 0;
+        attendanceMap.set(a.employeeId, cur);
       }
 
       // 2. Agenda agregat per karyawan
@@ -240,25 +246,27 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      // Attendance
+      // Attendance: totalHariKerja = jumlah tanggalShift unik (DIVERIFIKASI).
+      // Segmen PAM ganda di hari yang sama tetap dihitung 1 hari.
       const attendanceAgg = await prisma.attendance.groupBy({
-        by: ["employeeId"],
+        by: ["employeeId", "tanggalShift"],
         where: {
           employeeId: userId,
           tanggalShift: { gte: awalBulan, lt: akhirBulan },
           statusMasuk: "DIVERIFIKASI",
         },
-        _count: { id: true },
         _sum: { totalMenitKerja: true, potongan: true },
       });
 
-      const att = attendanceAgg[0] ?? {
-        _count: { id: 0 },
-        _sum: { totalMenitKerja: 0, potongan: 0 },
-      };
-      const totalHariKerja = att._count.id;
-      const totalMenitKerja = att._sum.totalMenitKerja ?? 0;
-      const totalPotonganTelat = att._sum.potongan ?? 0;
+      const totalHariKerja = attendanceAgg.length;
+      const totalMenitKerja = attendanceAgg.reduce(
+        (sum, a) => sum + (a._sum.totalMenitKerja ?? 0),
+        0
+      );
+      const totalPotonganTelat = attendanceAgg.reduce(
+        (sum, a) => sum + (a._sum.potongan ?? 0),
+        0
+      );
 
       // Agenda
       const agendaAgg = await prisma.agenda.groupBy({
