@@ -74,6 +74,22 @@ enum JenisHariTemplate {
   KUSTOM
 }
 
+enum TujuanSetoran {
+  TOKO
+  PUSAT
+}
+
+enum StatusSetoran {
+  MENUNGGU_KONFIRMASI
+  DITERIMA
+  DIBATALKAN
+}
+
+enum JenisBuktiSetoran {
+  SETOR
+  TERIMA
+}
+
 // ============ USER / KARYAWAN ============
 // Satu model untuk semua peran: Direktur, Manajer, Supervisor, Admin, Kepala Toko, Karyawan.
 
@@ -124,6 +140,10 @@ model User {
   izins        Izin[] @relation("IzinEmployee")
   izinsCreated Izin[] @relation("IzinCreator")
 
+  setoranDibuat     SetoranUang[] @relation("SetoranPengirim")
+  setoranDiterima   SetoranUang[] @relation("SetoranPenerima")
+  setoranDibatalkan SetoranUang[] @relation("SetoranPembatal")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -152,6 +172,9 @@ model Store {
 
   shiftTemplates ShiftTemplate[]
   shiftInstances ShiftInstance[]
+
+  setoranDari   SetoranUang[] @relation("SetoranDariStore")
+  setoranTujuan SetoranUang[] @relation("SetoranTujuanStore")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -488,4 +511,65 @@ model SalesRecord {
 
   @@index([storeId, tanggal])
   @@index([modul])
+}
+
+// ============ PENYETORAN UANG ANTAR TOKO & PUSAT ============
+// Jejak transfer kas tunai antar toko / ke kantor pusat, tercatat by tanggal & pelaku,
+// dengan bukti foto multi-file di kedua sisi (SETOR & TERIMA).
+// v1: TIDAK terkait saldo kas / SalesRecord / omset Epos (jejak transfer saja).
+// Tujuan PUSAT netral: tokoTujuanId = null (belum ada Store pusat).
+// nominalDisetor immutable setelah submit; selisih dihitung server saat konfirmasi.
+
+model SetoranUang {
+  id          String        @id @default(cuid())
+  dariStore   Store         @relation("SetoranDariStore", fields: [dariStoreId], references: [id])
+  dariStoreId String
+  tipeTujuan  TujuanSetoran
+  tokoTujuan  Store?        @relation("SetoranTujuanStore", fields: [tokoTujuanId], references: [id])
+  tokoTujuanId String? // null saat PUSAT
+
+  nominalDisetor Int // immutable setelah submit
+  keterangan     String? // opsional, max 200
+
+  status StatusSetoran @default(MENUNGGU_KONFIRMASI)
+
+  disetorkanOleh   User     @relation("SetoranPengirim", fields: [disetorkanOlehId], references: [id])
+  disetorkanOlehId String
+  disetorkanPada   DateTime // WIB
+
+  nominalDiterima   Int?
+  selisih           Int? // diterima − disetor (dihitung server)
+  keteranganSelisih String? // WAJIB bila selisih ≠ 0
+  diterimaOleh      User?    @relation("SetoranPenerima", fields: [diterimaOlehId], references: [id])
+  diterimaOlehId    String?
+  diterimaPada      DateTime?
+
+  batalOleh   User?    @relation("SetoranPembatal", fields: [batalOlehId], references: [id])
+  batalOlehId String?
+  batalPada   DateTime?
+  alasanBatal String?
+
+  bukti BuktiSetoran[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dariStoreId])
+  @@index([tokoTujuanId])
+  @@index([tipeTujuan])
+  @@index([status])
+  @@index([disetorkanPada])
+}
+
+model BuktiSetoran {
+  id        String            @id @default(cuid())
+  setoran   SetoranUang       @relation(fields: [setoranId], references: [id], onDelete: Cascade)
+  setoranId String
+  jenis     JenisBuktiSetoran
+  fileId    String // Telegram file_id — JANGAN simpan URL
+  namaFile  String? // nama asli file (opsional)
+  createdAt DateTime          @default(now())
+
+  @@index([setoranId])
+  @@index([jenis])
 }
