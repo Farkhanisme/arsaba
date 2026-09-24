@@ -130,13 +130,17 @@
 
 @layer utilities {
   /* Card hover effects */
+  /* Lift hanya untuk card murni teks — card berisi form control (input/select/textarea)
+     atau tombol/link (button/a) dibiarkan diam: hover di kartu berisi input membuat
+     card ikut "terangkat" saat kursor melintasi bidang form. Deteksi otomatis via :has
+     sehingga card baru mengikuti aturan ini tanpa prop tambahan. */
   .card-interactive {
     @apply transition-all duration-200 ease-out;
   }
-  .card-interactive:hover {
+  .card-interactive:hover:not(:has(input, select, textarea, button, a)) {
     @apply shadow-lg -translate-y-0.5;
   }
-  .card-interactive:active {
+  .card-interactive:active:not(:has(input, select, textarea, button, a)) {
     @apply shadow-sm translate-y-0 transition-none;
   }
   
