@@ -7,7 +7,7 @@ import { TerimaSetoran } from "./_components/terima-setoran";
 
 // Halaman TERIMA — KEPALA_TOKO (terkunci tokonya) + cross-store
 // (MANAJER/ADMIN/SUPERVISOR/DIREKTUR). KARYAWAN ditolak.
-// DIREKTUR & SUPERVISOR lihat saja (tanpa tombol konfirmasi); API 403 ganda.
+// DIREKTUR lihat saja (tanpa tombol konfirmasi); API 403 ganda.
 const TERIMA_ROLES = ["KEPALA_TOKO", "MANAJER", "ADMIN", "SUPERVISOR", "DIREKTUR"] as const;
 
 export default async function TerimaSetoranPage() {

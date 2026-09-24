@@ -17,7 +17,7 @@ import {
 
 // POST /api/setoran/[id]/terima — konfirmasi penerimaan setoran.
 // - Tujuan TOKO: hanya KEPALA_TOKO dari toko tujuan.
-// - Tujuan PUSAT: hanya MANAJER / ADMIN.
+// - Tujuan PUSAT: MANAJER / ADMIN / SUPERVISOR.
 // Body multipart/form-data: nominalDiterima, keteranganSelisih?, foto[] (≥1, ≤5).
 // Transisi status atomik via updateMany ber-kondisi (guard race terima-vs-terima
 // dan terima-vs-batal konkuren) — lihat komentar di dalam transaksi.
@@ -50,7 +50,7 @@ export async function POST(
         role === "KEPALA_TOKO" &&
         session.user.storeId !== null &&
         session.user.storeId === record.tokoTujuanId) ||
-      (record.tipeTujuan === "PUSAT" && (role === "MANAJER" || role === "ADMIN"));
+      (record.tipeTujuan === "PUSAT" && (role === "MANAJER" || role === "ADMIN" || role === "SUPERVISOR"));
     if (!bolehTerima) {
       return NextResponse.json(
         { error: "Role Anda tidak berwenang mengonfirmasi setoran ini." },

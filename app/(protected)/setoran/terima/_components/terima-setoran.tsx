@@ -32,13 +32,13 @@ type Props = {
 const MIME_OK = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILE = 5;
 
-// Mirror server: boleh konfirmasi = kepala toko tujuan (TOKO) / MANAJER|ADMIN (PUSAT).
-// DIREKTUR & SUPERVISOR lihat saja. API menegakkan ulang (403 ganda).
+// Mirror server: boleh konfirmasi = kepala toko tujuan (TOKO) / MANAJER|ADMIN|SUPERVISOR (PUSAT).
+// DIREKTUR lihat saja. API menegakkan ulang (403 ganda).
 function bolehKonfirmasi(item: SetoranItem, role: Role, storeId: string | null): boolean {
   if (item.tipeTujuan === "TOKO") {
     return role === "KEPALA_TOKO" && storeId !== null && storeId === item.tokoTujuanId;
   }
-  return role === "MANAJER" || role === "ADMIN";
+  return role === "MANAJER" || role === "ADMIN" || role === "SUPERVISOR";
 }
 
 export function TerimaSetoran({ role, storeId, storeNama, stores }: Props) {
@@ -214,7 +214,7 @@ export function TerimaSetoran({ role, storeId, storeNama, stores }: Props) {
               </Select>
             )}
           </div>
-          {(role === "DIREKTUR" || role === "SUPERVISOR") && (
+          {role === "DIREKTUR" && (
             <p className="text-sm text-muted-foreground">Mode lihat saja untuk role Anda.</p>
           )}
         </CardContent>

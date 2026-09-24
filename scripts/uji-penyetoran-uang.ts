@@ -7,7 +7,8 @@
 //       2 AuditLog (CREATE+UPDATE), bukti 2 file di tiap sisi.
 //   [3] Selisih: setor 500.000 → terima 495.000 + keterangan → selisih -5000.
 //   [4] Selisih tanpa keterangan → ditolak (guard route, mirror).
-//   [5] PUSAT: A setor → PUSAT; MANAJER boleh terima, KEPALA_TOKO C tidak.
+//   [5] PUSAT: A setor → PUSAT; MANAJER/ADMIN/SUPERVISOR boleh terima,
+//       KEPALA_TOKO C & DIREKTUR tidak.
 //   [6] Batal: pengirim batalkan sebelum konfirmasi (alasan wajib);
 //       batal ulang / batal setelah DITERIMA → 409 (transisi atomik, real).
 //       Plus uji race konkuren terima-vs-batal: tepat 1 pemenang (P2 lock).
@@ -69,7 +70,7 @@ function bolehTerima(
       role === "KEPALA_TOKO" &&
       storeId !== null &&
       storeId === tokoTujuanId) ||
-    (tipeTujuan === "PUSAT" && (role === "MANAJER" || role === "ADMIN"))
+    (tipeTujuan === "PUSAT" && (role === "MANAJER" || role === "ADMIN" || role === "SUPERVISOR"))
   );
 }
 
@@ -154,16 +155,17 @@ async function main() {
     const storeC = await mkStore("UJI-SETOR-C");
     storeIds.push(storeA.id, storeB.id, storeC.id);
 
-    const mkUser = (kode: string, role: "KEPALA_TOKO" | "MANAJER" | "ADMIN" | "KARYAWAN", storeId: string | null) =>
+    const mkUser = (kode: string, role: "KEPALA_TOKO" | "MANAJER" | "ADMIN" | "SUPERVISOR" | "KARYAWAN", storeId: string | null) =>
       prisma.user.create({ data: { kode: `${kode}-${suffix}`, nama: kode, role, status: "AKTIF", storeId } });
     const ka = await mkUser("UJI-KA", "KEPALA_TOKO", storeA.id);
     const kb = await mkUser("UJI-KB", "KEPALA_TOKO", storeB.id);
     const kc = await mkUser("UJI-KC", "KEPALA_TOKO", storeC.id);
     const mgr = await mkUser("UJI-MGR", "MANAJER", null);
     const adm = await mkUser("UJI-ADM", "ADMIN", null);
+    const spv = await mkUser("UJI-SPV", "SUPERVISOR", null);
     const kry = await mkUser("UJI-KRY", "KARYAWAN", storeA.id);
-    userIds.push(ka.id, kb.id, kc.id, mgr.id, adm.id, kry.id);
-    assert(storeIds.length === 3 && userIds.length === 6, "3 store + 6 user uji");
+    userIds.push(ka.id, kb.id, kc.id, mgr.id, adm.id, spv.id, kry.id);
+    assert(storeIds.length === 3 && userIds.length === 7, "3 store + 7 user uji");
     void WIB_OFFSET_MS;
 
     const mkBukti = (tag: string, jenis: "SETOR" | "TERIMA", n: number) =>
@@ -261,7 +263,9 @@ async function main() {
     assert(s3.tokoTujuanId === null, "PUSAT: tokoTujuanId null (tanpa Store pusat)");
     assert(bolehTerima("PUSAT", null, "MANAJER", null) === true, "MANAJER boleh terima PUSAT");
     assert(bolehTerima("PUSAT", null, "ADMIN", null) === true, "ADMIN boleh terima PUSAT");
+    assert(bolehTerima("PUSAT", null, "SUPERVISOR", null) === true, "SUPERVISOR boleh terima PUSAT");
     assert(bolehTerima("PUSAT", null, "KEPALA_TOKO", storeC.id) === false, "KEPALA_TOKO C tidak bisa terima PUSAT (403)");
+    assert(bolehTerima("PUSAT", null, "DIREKTUR", null) === false, "DIREKTUR tidak bisa terima PUSAT (403)");
     assert(bolehTerima("TOKO", storeB.id, "KEPALA_TOKO", storeB.id) === true, "kepala toko tujuan boleh terima TOKO");
     assert(bolehTerima("TOKO", storeB.id, "KEPALA_TOKO", storeA.id) === false, "kepala toko lain tidak boleh terima (403)");
 

@@ -274,7 +274,7 @@ Jejak transfer uang tunai dari satu toko ke toko lain atau ke Kantor Pusat, terc
 
 **Alur:**
 1. Kepala Toko A membuat setoran (tujuan: toko B atau Kantor Pusat) → status `MENUNGGU_KONFIRMASI`.
-2. Kepala Toko B (untuk tujuan TOKO) atau Manajer/Admin (untuk tujuan PUSAT) mengonfirmasi dengan nominal diterima + foto bukti terima → status `DITERIMA`.
+2. Kepala Toko B (untuk tujuan TOKO) atau Manajer/Admin/Supervisor (untuk tujuan PUSAT) mengonfirmasi dengan nominal diterima + foto bukti terima → status `DITERIMA`.
 3. Koreksi sebelum diterima: pengirim membatalkan dengan alasan wajib → status `DIBATALKAN` (salah input nominal → batalkan & buat ulang, jangan edit).
 
 **Aturan nominal & selisih:**
@@ -288,11 +288,11 @@ Jejak transfer uang tunai dari satu toko ke toko lain atau ke Kantor Pusat, terc
 |---|---|---|---|---|---|---|
 | Buat setoran (dari tokonya) | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ |
 | Konfirmasi terima (tujuan = tokonya) | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ |
-| Konfirmasi terima (tujuan PUSAT) | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ |
+| Konfirmasi terima (tujuan PUSAT) | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ |
 | Batalkan setoran (yang ia buat) | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ |
 | Lihat semua setoran (audit) | ✗ | ✗ (hanya yang melibatkan tokonya) | ✓ | ✓ | ✓ | ✓ |
 
-Kepala Toko hanya melihat transaksi yang melibatkan tokonya (sebagai pengirim atau penerima); Direktur/Supervisor lihat saja. Karyawan tidak punya akses ke modul ini sama sekali.
+Kepala Toko hanya melihat transaksi yang melibatkan tokonya (sebagai pengirim atau penerima); Direktur lihat saja. Supervisor dapat mengonfirmasi penerimaan setoran ke PUSAT. Karyawan tidak punya akses ke modul ini sama sekali.
 
 **Status & konkurensi:** hanya `MENUNGGU_KONFIRMASI` yang bisa bertransisi ke `DITERIMA`/`DIBATALKAN`; transisi memakai guard atomik ber-kondisi di database sehingga request konkuren (terima-vs-batal) hanya menghasilkan satu pemenang, sisanya 409.
 
