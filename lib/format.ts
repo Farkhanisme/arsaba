@@ -1,4 +1,4 @@
-import { format as formatDateFns, formatDistanceToNow } from "date-fns";
+import { format as formatDateFns } from "date-fns";
 import { id as localeId } from "date-fns/locale";
 
 /**

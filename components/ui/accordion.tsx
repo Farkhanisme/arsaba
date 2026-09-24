@@ -86,7 +86,7 @@ export function AccordionItem({
   content,
   className,
 }: AccordionItemProps) {
-  const { type, value: contextValue, onValueChange } = useAccordionContext();
+  const { value: contextValue, onValueChange } = useAccordionContext();
   const isOpen = contextValue.includes(value);
   const [isAnimating, setIsAnimating] = React.useState(false);
 

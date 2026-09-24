@@ -1,10 +1,6 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import Link from "next/link";
 import type { Role } from "@prisma/client";
 import PayrollGenerateForm from "./_components/PayrollGenerateForm";
 import PayrollTable from "./_components/PayrollTable";
@@ -13,11 +9,6 @@ import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { AccessDenied } from "@/components/ui/access-denied";
 
 const ALLOWED_ROLES: Role[] = ["MANAJER"];
-
-function formatRupiah(n: number | null): string {
-  if (n === null) return "—";
-  return "Rp" + n.toLocaleString("id-ID");
-}
 
 export default async function ManajerPayrollPage({
   searchParams,

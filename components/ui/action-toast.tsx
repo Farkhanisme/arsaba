@@ -1,9 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { toast, type ToastT, type ToasterProps } from "sonner";
-import { Button } from "@/components/ui/button";
-import { X, Undo2, Loader2, CheckCircle, AlertCircle } from "lucide-react";
+import { toast } from "sonner";
+import { Loader2, CheckCircle, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ActionToastOptions {

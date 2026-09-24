@@ -32,8 +32,6 @@ export function AssignForm({ templateId, employees, stores }: Props) {
   const [targetId, setTargetId] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const opsi = targetType === "EMPLOYEE" ? employees : stores;
-
   const submit = async () => {
     if (!targetId) {
       toast.error(

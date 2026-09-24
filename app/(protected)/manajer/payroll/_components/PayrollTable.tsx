@@ -1,8 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { format } from "date-fns";
-import { id } from "date-fns/locale";
 
 type PayrollItem = {
   id: string;
@@ -34,15 +32,6 @@ type PayrollItem = {
 function formatRupiah(n: number | null): string {
   if (n === null) return "—";
   return "Rp " + n.toLocaleString("id-ID");
-}
-
-function formatPeriode(periodeStr: string): string {
-  try {
-    const date = new Date(periodeStr);
-    return format(date, "MMMM yyyy", { locale: id });
-  } catch {
-    return periodeStr;
-  }
 }
 
 function StatusBadge({ status }: { status: string }) {

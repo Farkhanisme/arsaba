@@ -1,10 +1,10 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { ChevronUp, ChevronDown, ChevronsUpDown, Loader2 } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SkeletonTable } from "@/components/ui/skeleton";
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 
 interface Column<T> {
   key: string;

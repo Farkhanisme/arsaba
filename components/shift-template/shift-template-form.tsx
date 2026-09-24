@@ -27,12 +27,6 @@ type Props =
       };
     };
 
-function menitToTime(menit: number): string {
-  const jam = Math.floor(menit / 60);
-  const m = menit % 60;
-  return `${String(jam).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-
 function timeToMenit(time: string): number {
   const parts = time.split(":");
   const jam = Number(parts[0]);

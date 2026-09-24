@@ -5,8 +5,6 @@ import type { Role } from "@prisma/client";
 
 const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
 
-type Action = "approve" | "reject";
-
 type Body = {
   action?: unknown;
   reason?: unknown;

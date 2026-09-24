@@ -26,7 +26,7 @@ export default function PayrollGenerateForm() {
     }
 
     setIsSubmitting(true);
-    const progressToast = showProgressToast({ message: "Memproses generate payroll...", isLoading: true });
+    showProgressToast({ message: "Memproses generate payroll...", isLoading: true });
     
     try {
       const res = await fetch("/api/payroll/generate", {

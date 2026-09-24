@@ -193,15 +193,13 @@ export async function PATCH(
       });
 
       // Upsert GajiPokok if nominal provided
-      let gajiPokokAfter: { nominal: number } | null = null;
       if (nominalGajiPokok !== null) {
-        const upserted = await tx.gajiPokok.upsert({
+        await tx.gajiPokok.upsert({
           where: { employeeId: id },
           create: { employeeId: id, nominal: nominalGajiPokok },
           update: { nominal: nominalGajiPokok },
           select: { nominal: true },
         });
-        gajiPokokAfter = upserted;
 
         // Audit log for GajiPokok CREATE/UPDATE
         await tx.auditLog.create({

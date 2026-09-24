@@ -51,7 +51,6 @@ export const LoadingButton = forwardRef<HTMLButtonElement, LoadingButtonProps>(
       }
 
       if (successText && !e.defaultPrevented) {
-        const originalChildren = children;
         // Note: This is a simplified version. For full success state,
         // you'd need to manage state in the parent component.
       }

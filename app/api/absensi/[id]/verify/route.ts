@@ -6,9 +6,6 @@ const ALLOWED_ROLES = ["SUPERVISOR", "ADMIN", "MANAJER"];
 const POTONGAN_PER_MENIT = 1000;
 const MENIT_TELAT_MAX = 1440;
 
-type Bagian = "masuk" | "keluar";
-type Action = "approve" | "reject";
-
 type Body = {
   bagian?: unknown;
   action?: unknown;

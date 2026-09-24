@@ -6,8 +6,6 @@ import type { Role } from "@prisma/client";
 const ALLOWED_ROLES = ["ADMIN", "SUPERVISOR", "MANAJER"];
 const ASSIGNABLE_EMPLOYEE_ROLES: Role[] = ["KARYAWAN", "KEPALA_TOKO"];
 
-type TargetType = "EMPLOYEE" | "STORE";
-
 type Body = {
   targetType?: unknown;
   targetId?: unknown;
