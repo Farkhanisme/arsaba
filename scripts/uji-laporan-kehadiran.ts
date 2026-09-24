@@ -13,7 +13,11 @@
 //
 // Periode uji: 2026-08 (bulan lampau) agar tidak bentrok dengan data berjalan.
 import { prisma } from "@/lib/prisma";
-import { getLaporanKehadiran, type LaporanKaryawan } from "@/lib/laporan-kehadiran";
+import {
+  getLaporanKehadiran,
+  getRincianKehadiran,
+  type LaporanKaryawan,
+} from "@/lib/laporan-kehadiran";
 
 const PERIODE = "2026-08";
 const AWAL_BULAN = new Date(Date.UTC(2026, 7, 1));
@@ -45,6 +49,22 @@ async function main() {
   const anggotaIds: string[] = []; // karyawan uji (untuk cleanup & cek residu)
 
   try {
+    // ---------- Tunggu DB siap (pooler Neon flaky: retry + backoff) ----------
+    let siap = false;
+    for (let attempt = 1; attempt <= 5 && !siap; attempt++) {
+      try {
+        await prisma.store.count();
+        siap = true;
+      } catch {
+        if (attempt === 5) {
+          throw new Error(
+            "DB tidak terjangkau setelah 5 percobaan (pooler Neon flaky) — rerun script."
+          );
+        }
+        await new Promise((r) => setTimeout(r, 2000 * attempt));
+      }
+    }
+
     // ---------- Set up data uji ----------
     const aktor = await prisma.user.create({
       data: { kode: `UJI-ACT-${suffix}`, nama: "Aktor Uji", role: "SUPERVISOR", status: "AKTIF" },
@@ -227,6 +247,107 @@ async function main() {
     console.log(
       "  ℹ P1-doc: hadir lintas toko = 11 > hadir unik perusahaan = 9 (UJI-004 dihitung di toko A dan B) — disengaja, lihat spec §8.1."
     );
+
+    console.log(`\n[5] Rincian per tanggal (Scope B.1) + invarian vs agregat`);
+    const fmtTgl = (n: number) => `2026-08-${String(n).padStart(2, "0")}`;
+    const rinArgs = (employeeId: string, sid: string) => ({
+      employeeId,
+      periode: PERIODE,
+      awalBulan: AWAL_BULAN,
+      akhirBulan: AKHIR_BULAN,
+      storeId: sid,
+    });
+
+    // UJI-003 lensa A: union jadwal{D1..D4} ∪ hadir{D1,D2} = 4 baris.
+    const rin003 = await getRincianKehadiran(rinArgs(uji003.id, storeAId));
+    assert(rin003.items.length === 4, "Rincian UJI-003: 4 baris (union jadwal ∪ hadir)", {
+      got: rin003.items.length,
+    });
+    const d4 = rin003.items.find((i) => i.tanggal === fmtTgl(6));
+    assert(
+      d4?.status === "IZIN" && (d4?.alasanIzin ?? "").includes("P2c"),
+      "Rincian UJI-003 D4: IZIN + alasan",
+      d4
+    );
+    assert(
+      !rin003.items.some((i) => i.tanggal === fmtTgl(7)),
+      "Rincian UJI-003: izin off-day D5 tidak tampil"
+    );
+    assert(
+      rin003.ringkasan.hariHadir === 2 &&
+        rin003.ringkasan.hariIzin === 1 &&
+        rin003.ringkasan.hariTanpaKeterangan === 1 &&
+        rin003.ringkasan.hariDiLuarJadwal === 0,
+      "Rincian UJI-003 ringkasan: hadir 2, izin 1, tanpa-ket 1, luar 0",
+      rin003.ringkasan
+    );
+    const agg003 = carik(repA!.karyawan, "UJI-003");
+    assert(
+      agg003?.jadwalHari === rin003.ringkasan.jadwalHari &&
+        agg003?.hariHadir === rin003.ringkasan.hariHadir &&
+        agg003?.hariIzin === rin003.ringkasan.hariIzin &&
+        agg003?.hariTanpaKeterangan === rin003.ringkasan.hariTanpaKeterangan &&
+        agg003?.hariDiLuarJadwal === rin003.ringkasan.hariDiLuarJadwal,
+      "Invarian UJI-003 @A: rincian == agregat",
+      { agg: agg003, rin: rin003.ringkasan }
+    );
+
+    // UJI-002 lensa A: D3 (tgl 5) HADIR via PAM, fisik = toko B.
+    const rin002 = await getRincianKehadiran(rinArgs(uji002.id, storeAId));
+    const pamDay = rin002.items.find((i) => i.tanggal === fmtTgl(5));
+    assert(
+      pamDay?.status === "HADIR" &&
+        pamDay?.isPam === true &&
+        pamDay?.storeFisikNama === storeB.nama,
+      "Rincian UJI-002 D3: HADIR + isPam + fisik toko B",
+      pamDay
+    );
+
+    // UJI-004 lensa A: D1 HADIR walau ada izin (hadir menang, alasan null).
+    const rin004A = await getRincianKehadiran(rinArgs(uji004.id, storeAId));
+    const d1A = rin004A.items.find((i) => i.tanggal === fmtTgl(3));
+    assert(
+      d1A?.status === "HADIR" && d1A?.alasanIzin === null,
+      "Rincian UJI-004 D1 @A: HADIR, alasan null (hadir menang)",
+      d1A
+    );
+
+    // UJI-004 lensa B: 2 baris DILUAR_JADWAL + invarian vs agregat B.
+    const rin004B = await getRincianKehadiran(rinArgs(uji004.id, storeBId));
+    assert(
+      rin004B.items.length === 2 && rin004B.ringkasan.hariDiLuarJadwal === 2,
+      "Rincian UJI-004 @B: 2 baris DILUAR_JADWAL",
+      rin004B.ringkasan
+    );
+    const agg004B = carik(repB!.karyawan, "UJI-004");
+    assert(
+      agg004B?.jadwalHari === rin004B.ringkasan.jadwalHari &&
+        agg004B?.hariHadir === rin004B.ringkasan.hariHadir &&
+        agg004B?.hariIzin === rin004B.ringkasan.hariIzin &&
+        agg004B?.hariTanpaKeterangan === rin004B.ringkasan.hariTanpaKeterangan &&
+        agg004B?.hariDiLuarJadwal === rin004B.ringkasan.hariDiLuarJadwal,
+      "Invarian UJI-004 @B: rincian == agregat",
+      { agg: agg004B, rin: rin004B.ringkasan }
+    );
+
+    // UJI-001 @A (hadir penuh) dan UJI-005 @A (kosong).
+    const rin001 = await getRincianKehadiran(rinArgs(uji001.id, storeAId));
+    const agg001 = carik(repA!.karyawan, "UJI-001");
+    assert(
+      rin001.items.length === 2 && rin001.ringkasan.hariHadir === 2,
+      "Rincian UJI-001: 2 baris HADIR",
+      rin001.ringkasan
+    );
+    assert(
+      agg001?.hariTanpaKeterangan === rin001.ringkasan.hariTanpaKeterangan &&
+        agg001?.hariDiLuarJadwal === rin001.ringkasan.hariDiLuarJadwal,
+      "Invarian UJI-001 @A: rincian == agregat",
+      { agg: agg001, rin: rin001.ringkasan }
+    );
+    const rin005 = await getRincianKehadiran(rinArgs(uji005.id, storeAId));
+    assert(rin005.items.length === 0, "Rincian UJI-005: 0 baris", {
+      got: rin005.items.length,
+    });
   } catch (err) {
     failed += 1;
     console.error("❌ Gagal menjalankan skenario:", err);

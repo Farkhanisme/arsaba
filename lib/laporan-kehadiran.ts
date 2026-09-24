@@ -277,3 +277,151 @@ export async function getLaporanKehadiran(args: {
     stores,
   };
 }
+
+// ============ RINCIAN PER TANGGAL (Scope B.1) ============
+// Lensa per hari untuk satu karyawan pada satu bulan. Aturan status per tanggal
+// (konsisten dengan agregat di atas):
+// - HADIR: ada attendance DIVERIFIKASI (hadir menang atas izin & jadwal).
+// - DILUAR_JADWAL: hadir tapi tanggal tsb bukan hari jadwal lensa ini.
+// - IZIN: tidak hadir + tanggal tsb hari jadwal lensa ini + ada record Izin.
+// - TIDAK_HADIR: tidak hadir + hari jadwal + tanpa izin.
+// Union tanggal = jadwal ∪ hadir. Izin TIDAK menambah tanggal (izin off-day
+// tidak tampil) sehingga pada kasus umum count(IZIN) == hariIzin agregat.
+// Catatan jujur: pada overlap parsial (hadir sebagian di luar jadwal sekaligus
+// ada jadwal tak dihadiri), count(TIDAK_HADIR) per tanggal bisa melebihi
+// hariTanpaKeterangan agregat — karena agregat memakai formula net
+// (jadwal − hadir − izin) sementara rincian menampilkan kebenaran per tanggal.
+// Agregat Scope A TIDAK diubah (sudah terverifikasi); rincian apa adanya.
+// Kalau 2+ attendance sehari (mis. 2 segmen PAM): 1 baris per tanggal,
+// prioritas record non-PAM untuk detail fisik.
+
+export type StatusHarian = "HADIR" | "IZIN" | "TIDAK_HADIR" | "DILUAR_JADWAL";
+
+export type RincianHarian = {
+  tanggal: string; // YYYY-MM-DD
+  status: StatusHarian;
+  storeFisikNama: string | null;
+  isPam: boolean;
+  menitTelat: number;
+  potongan: number;
+  // Hanya diisi saat status == "IZIN" (hadir menang: izin di hari hadir
+  // dianggap terlewati dan alasannya tidak ditampilkan).
+  alasanIzin: string | null;
+};
+
+export type RincianKehadiran = {
+  employeeId: string;
+  periode: string;
+  storeId: string | null;
+  items: RincianHarian[];
+  ringkasan: {
+    jadwalHari: number;
+    hariHadir: number;
+    hariIzin: number;
+    hariTanpaKeterangan: number;
+    hariDiLuarJadwal: number;
+  };
+};
+
+export async function getRincianKehadiran(args: {
+  employeeId: string;
+  periode: string;
+  awalBulan: Date;
+  akhirBulan: Date;
+  storeId?: string | null;
+}): Promise<RincianKehadiran> {
+  const { employeeId, periode, awalBulan, akhirBulan, storeId } = args;
+  const lensStoreId = storeId ?? null;
+
+  const assignments = await prisma.shiftAssignment.findMany({
+    where: {
+      employeeId,
+      shiftInstance: {
+        tanggal: { gte: awalBulan, lt: akhirBulan },
+        statusJadwal: "APPROVED",
+        ...(lensStoreId ? { storeId: lensStoreId } : {}),
+      },
+    },
+    select: { shiftInstance: { select: { tanggal: true } } },
+  });
+  const jadwalSet = new Set(
+    assignments.map((a) => tanggalKey(a.shiftInstance.tanggal))
+  );
+
+  const attendances = await prisma.attendance.findMany({
+    where: {
+      employeeId,
+      tanggalShift: { gte: awalBulan, lt: akhirBulan },
+      statusMasuk: "DIVERIFIKASI",
+    },
+    select: {
+      tanggalShift: true,
+      isPam: true,
+      menitTelat: true,
+      potongan: true,
+      absenMasuk: true,
+      store: { select: { nama: true } },
+    },
+    orderBy: { absenMasuk: "asc" },
+  });
+  // 1 tanggal -> 1 record (prioritas non-PAM).
+  const hadirMap = new Map<string, (typeof attendances)[number]>();
+  for (const a of attendances) {
+    const key = tanggalKey(a.tanggalShift);
+    const prev = hadirMap.get(key);
+    if (!prev || (prev.isPam && !a.isPam)) hadirMap.set(key, a);
+  }
+
+  const izins = await prisma.izin.findMany({
+    where: {
+      employeeId,
+      tanggal: { gte: awalBulan, lt: akhirBulan },
+    },
+    select: { tanggal: true, alasan: true },
+  });
+  const izinMap = new Map(
+    izins.map((z) => [tanggalKey(z.tanggal), z.alasan])
+  );
+
+  const union = [...new Set([...jadwalSet, ...hadirMap.keys()])].sort();
+
+  const items: RincianHarian[] = union.map((t) => {
+    const hadir = hadirMap.get(t);
+    if (hadir) {
+      return {
+        tanggal: t,
+        status: (jadwalSet.has(t) ? "HADIR" : "DILUAR_JADWAL") as StatusHarian,
+        storeFisikNama: hadir.store.nama,
+        isPam: hadir.isPam,
+        menitTelat: hadir.menitTelat,
+        potongan: hadir.potongan,
+        alasanIzin: null,
+      };
+    }
+    const alasan = izinMap.get(t) ?? null;
+    return {
+      tanggal: t,
+      status: (alasan !== null ? "IZIN" : "TIDAK_HADIR") as StatusHarian,
+      storeFisikNama: null,
+      isPam: false,
+      menitTelat: 0,
+      potongan: 0,
+      alasanIzin: alasan,
+    };
+  });
+
+  const count = (s: StatusHarian) => items.filter((i) => i.status === s).length;
+  return {
+    employeeId,
+    periode,
+    storeId: lensStoreId,
+    items,
+    ringkasan: {
+      jadwalHari: jadwalSet.size,
+      hariHadir: hadirMap.size,
+      hariIzin: count("IZIN"),
+      hariTanpaKeterangan: count("TIDAK_HADIR"),
+      hariDiLuarJadwal: count("DILUAR_JADWAL"),
+    },
+  };
+}
