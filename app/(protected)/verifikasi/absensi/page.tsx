@@ -28,12 +28,12 @@ export default async function VerifikasiAbsensiPage() {
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
     return (
-      <main className="container mx-auto max-w-3xl p-6">
+      <div className="mx-auto max-w-3xl">
         <h1 className="text-2xl font-bold">Akses ditolak</h1>
         <p className="mt-2 text-muted-foreground">
           Halaman verifikasi hanya untuk Supervisor, Admin, dan Manajer.
         </p>
-      </main>
+      </div>
     );
   }
 
@@ -53,15 +53,17 @@ export default async function VerifikasiAbsensiPage() {
   });
 
   return (
-    <main className="container mx-auto max-w-5xl">
+    <div className="space-y-6">
       <Breadcrumb autoGenerate />
 
-      <h1 className="text-2xl font-bold">Verifikasi Absensi</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
-        {daftar.length} absensi menunggu verifikasi
-      </p>
+      <div>
+        <h1 className="text-2xl font-bold">Verifikasi Absensi</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {daftar.length} absensi menunggu verifikasi
+        </p>
+      </div>
 
-      <div className="mt-6 space-y-4">
+      <div className="space-y-3">
         {daftar.length === 0 && (
           <p className="text-muted-foreground">Tidak ada absensi yang perlu diverifikasi.</p>
         )}
@@ -89,6 +91,6 @@ export default async function VerifikasiAbsensiPage() {
           </Link>
         ))}
       </div>
-    </main>
+    </div>
   );
 }

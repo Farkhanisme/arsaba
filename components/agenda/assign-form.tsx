@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 
 type Employee = {
   id: string;
@@ -73,7 +74,7 @@ export function AssignForm({ templateId, employees, stores }: Props) {
     <div className="space-y-4">
       <div className="space-y-1">
         <Label htmlFor="targetType">Tipe target</Label>
-        <select
+        <Select
           id="targetType"
           value={targetType}
           onChange={(e) => {
@@ -81,23 +82,21 @@ export function AssignForm({ templateId, employees, stores }: Props) {
             setTargetId("");
           }}
           disabled={isSubmitting}
-          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <option value="EMPLOYEE">Karyawan</option>
           <option value="STORE">Toko (semua karyawan)</option>
-        </select>
+        </Select>
       </div>
 
       <div className="space-y-1">
         <Label htmlFor="targetId">
           {targetType === "EMPLOYEE" ? "Karyawan" : "Toko"}
         </Label>
-        <select
+        <Select
           id="targetId"
           value={targetId}
           onChange={(e) => setTargetId(e.target.value)}
           disabled={isSubmitting}
-          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <option value="">
             {targetType === "EMPLOYEE"
@@ -116,7 +115,7 @@ export function AssignForm({ templateId, employees, stores }: Props) {
                   {s.nama}
                 </option>
               ))}
-        </select>
+        </Select>
       </div>
 
       <Button type="button" onClick={submit} disabled={isSubmitting || !targetId}>

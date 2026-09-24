@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { showProgressToast, completeProgressToast, showSuccessWithAction } from "@/components/ui/action-toast";
+import { Select } from "@/components/ui/select";
 
 type AgendaItem = {
   id: string;
@@ -132,7 +133,7 @@ export default function NominalAgendaPage() {
           <div className="grid gap-3 md:grid-cols-3">
             <div className="space-y-1">
               <Label htmlFor="batch-sumber">Filter sumber</Label>
-              <select
+              <Select
                 id="batch-sumber"
                 value={batchSumber}
                 onChange={(e) =>
@@ -141,12 +142,11 @@ export default function NominalAgendaPage() {
                   )
                 }
                 disabled={isBatchSubmitting}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
                 <option value="">— semua sumber —</option>
                 <option value="TEMPLATE_PUSAT">Template Pusat</option>
                 <option value="MANDIRI_KARYAWAN">Mandiri Karyawan</option>
-              </select>
+              </Select>
             </div>
 
             <div className="space-y-1">

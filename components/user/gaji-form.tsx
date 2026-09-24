@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import type { TipePerhitunganGaji } from "@prisma/client";
 
 type Props = {
@@ -89,14 +90,13 @@ export function GajiForm({ userId, initial }: Props) {
     <div className="space-y-3">
       <div className="space-y-1">
         <Label htmlFor={`tipe-${userId}`}>Tipe perhitungan gaji</Label>
-        <select
+        <Select
           id={`tipe-${userId}`}
           value={tipe}
           onChange={(e) =>
             setTipe(e.target.value as TipePerhitunganGaji | "")
           }
           disabled={isSubmitting}
-          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
         >
           <option value="">— belum ditentukan —</option>
           {TIPE_OPTIONS.map((t) => (
@@ -104,7 +104,7 @@ export function GajiForm({ userId, initial }: Props) {
               {t}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
 
       {tipe === "JAM" && (

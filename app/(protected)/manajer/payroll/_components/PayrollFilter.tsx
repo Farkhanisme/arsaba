@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 
 type Props = {
   defaultPeriode: string;
@@ -54,16 +55,15 @@ export default function PayrollFilter({ defaultPeriode, defaultStatus }: Props) 
         <Label htmlFor="filter-status" className="hidden sm:block">
           Status
         </Label>
-        <select
+        <Select
           id="filter-status"
           value={defaultStatus}
           onChange={(e) => handleStatusChange(e.target.value)}
-          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
         >
           <option value="">Semua status</option>
           <option value="DRAFT">DRAFT</option>
           <option value="LOCKED">LOCKED</option>
-        </select>
+        </Select>
       </div>
     </div>
   );

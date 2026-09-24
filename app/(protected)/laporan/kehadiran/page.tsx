@@ -15,31 +15,33 @@ export default async function LaporanKehadiranPage() {
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
     return (
-      <main className="container mx-auto max-w-3xl p-6">
+      <div className="mx-auto max-w-3xl">
         <h1 className="text-2xl font-bold">Akses ditolak</h1>
         <p className="mt-2 text-muted-foreground">
           Laporan kehadiran hanya untuk Direktur, Manajer, Admin, dan Supervisor.
         </p>
-      </main>
+      </div>
     );
   }
 
   const canMarkIzin = MARK_ROLES.includes(session.user.role);
 
   return (
-    <main className="container mx-auto max-w-5xl">
+    <div className="space-y-6">
       <Breadcrumb autoGenerate />
 
-      <h1 className="text-2xl font-bold">Laporan Kehadiran</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Rekap kehadiran vs jadwal per toko untuk audit. Ketidakhadiran dihitung
-        otomatis dari jadwal yang sudah di-approve dikurangi kehadiran
-        terverifikasi — termasuk yang tanpa keterangan.
-      </p>
+      <div>
+        <h1 className="text-2xl font-bold">Laporan Kehadiran</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Rekap kehadiran vs jadwal per toko untuk audit. Ketidakhadiran dihitung
+          otomatis dari jadwal yang sudah di-approve dikurangi kehadiran
+          terverifikasi — termasuk yang tanpa keterangan.
+        </p>
+      </div>
 
-      <div className="mt-6">
+      <div>
         <KehadiranReport canMarkIzin={canMarkIzin} />
       </div>
-    </main>
+    </div>
   );
 }

@@ -82,7 +82,7 @@ export function HariKerjaPicker({ value, onChange, disabled, label }: Props) {
 
   if (disabled) {
     return (
-      <div className="space-y-2">
+      <div className="space-y-1">
         <label className="text-sm font-medium text-muted-foreground">{label ?? "Hari Kerja"}</label>
         <div className="px-3 py-2 bg-muted/50 rounded-lg text-sm text-muted-foreground">
           {getDisplayText()}

@@ -23,12 +23,12 @@ export default async function AbsensiPage() {
   const role = session.user.role;
   if (role !== "KARYAWAN" && role !== "KEPALA_TOKO") {
     return (
-      <main className="container mx-auto max-w-xl p-6">
+      <div className="mx-auto max-w-xl">
         <h1 className="text-2xl font-bold">Akses ditolak</h1>
         <p className="mt-2 text-muted-foreground">
           Halaman absensi hanya untuk Karyawan dan Kepala Toko.
         </p>
-      </main>
+      </div>
     );
   }
 
@@ -40,18 +40,20 @@ export default async function AbsensiPage() {
   const mode = shiftAktif ? "check-out" : "check-in";
 
   return (
-    <main className="container mx-auto max-w-xl p-6">
+    <div className="mx-auto max-w-xl space-y-6">
       <Breadcrumb autoGenerate />
-      <h1 className="text-2xl font-bold">Absensi</h1>
-      {shiftAktif && (
-        <p className="mt-2 text-sm text-muted-foreground">
-          Anda sedang dalam shift sejak {formatJamWIB(shiftAktif.absenMasuk)}. Lakukan check-out
-          saat shift berakhir.
-        </p>
-      )}
-      <div className="mt-6">
+      <div>
+        <h1 className="text-2xl font-bold">Absensi</h1>
+        {shiftAktif && (
+          <p className="mt-1 text-sm text-muted-foreground">
+            Anda sedang dalam shift sejak {formatJamWIB(shiftAktif.absenMasuk)}. Lakukan check-out
+            saat shift berakhir.
+          </p>
+        )}
+      </div>
+      <div>
         <AbsensiForm mode={mode} />
       </div>
-    </main>
+    </div>
   );
 }

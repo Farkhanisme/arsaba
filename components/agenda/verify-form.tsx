@@ -74,7 +74,7 @@ export function VerifyForm({ agendaId }: Props) {
       )}
 
       {mode === "reject" && (
-        <div className="space-y-2 border-t pt-4">
+        <div className="space-y-1 border-t pt-4">
           <Label htmlFor="reason">Alasan penolakan</Label>
           <Input
             id="reason"

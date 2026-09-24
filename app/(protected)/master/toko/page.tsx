@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import type { Role } from "@prisma/client";
 
 const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
@@ -14,12 +15,12 @@ export default async function AdminTokoPage() {
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
     return (
-      <main className="container mx-auto max-w-3xl p-6">
+      <div className="mx-auto max-w-3xl">
         <h1 className="text-2xl font-bold">Akses ditolak</h1>
         <p className="mt-2 text-muted-foreground">
           Halaman ini hanya untuk Admin, Supervisor, dan Manajer.
         </p>
-      </main>
+      </div>
     );
   }
 
@@ -32,6 +33,8 @@ export default async function AdminTokoPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb autoGenerate />
+
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Master Data Toko</h1>

@@ -19,12 +19,12 @@ export default async function ShiftTemplateEditPage({
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
     return (
-      <main className="container mx-auto max-w-3xl p-6">
+      <div className="mx-auto max-w-3xl">
         <h1 className="text-2xl font-bold">Akses ditolak</h1>
         <p className="mt-2 text-muted-foreground">
           Halaman ini hanya untuk Admin, Supervisor, dan Manajer.
         </p>
-      </main>
+      </div>
     );
   }
 
@@ -37,12 +37,12 @@ export default async function ShiftTemplateEditPage({
 
   if (!store) {
     return (
-      <main className="container mx-auto max-w-3xl p-6">
+      <div className="mx-auto max-w-3xl">
         <h1 className="text-2xl font-bold">Toko tidak ditemukan</h1>
         <Link href="/master/toko" className="mt-4 inline-block text-primary hover:underline">
           Kembali ke Daftar Toko
         </Link>
-      </main>
+      </div>
     );
   }
 

@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import Link from "next/link";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import { showUndoToast } from "@/components/ui/action-toast";
@@ -193,14 +192,7 @@ export default function PayrollDetailClient({ initialData }: Props) {
   const previewTotalGaji = calculateTotalGaji();
 
   return (
-    <div className="container mx-auto max-w-3xl p-6 space-y-6">
-      <Link
-        href="/manajer/payroll"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        ← Kembali ke Daftar Payroll
-      </Link>
-
+    <div className="mx-auto max-w-3xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Detail Payroll</h1>
         <p className="mt-1 text-sm text-muted-foreground">

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import type { Role } from "@prisma/client";
 
 type Store = {
@@ -186,29 +187,27 @@ export function UserForm(props: Props) {
       <div className="grid gap-3 md:grid-cols-2">
         <div className="space-y-1">
           <Label htmlFor="role">Role</Label>
-          <select
+          <Select
             id="role"
             value={role}
             onChange={(e) => setRole(e.target.value as Role)}
             disabled={isSubmitting}
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           >
             {ROLE_OPTIONS.map((r) => (
               <option key={r} value={r}>
                 {r}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
 
         <div className="space-y-1">
           <Label htmlFor="store">Toko</Label>
-          <select
+          <Select
             id="store"
             value={storeId}
             onChange={(e) => setStoreId(e.target.value)}
             disabled={isSubmitting}
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           >
             <option value="">— tanpa toko —</option>
             {props.stores.map((s) => (
@@ -216,24 +215,23 @@ export function UserForm(props: Props) {
                 {s.nama}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
         <div className="space-y-1">
           <Label htmlFor="status">Status</Label>
-          <select
+          <Select
             id="status"
             value={status}
             onChange={(e) => setStatus(e.target.value)}
             disabled={isSubmitting}
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           >
             <option value="AKTIF">AKTIF</option>
             <option value="RESIGN">RESIGN</option>
             <option value="NONAKTIF">NONAKTIF</option>
-          </select>
+          </Select>
         </div>
 
         <div className="space-y-1">

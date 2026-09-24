@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { formatRupiah } from "@/lib/format";
 import type {
   LaporanKaryawan,
@@ -378,11 +379,10 @@ export default function KehadiranReport({ canMarkIzin }: { canMarkIzin: boolean 
             <label htmlFor="toko" className="text-xs font-medium text-muted-foreground">
               Toko
             </label>
-            <select
+            <Select
               id="toko"
               value={storeId}
               onChange={(e) => setStoreId(e.target.value)}
-              className="rounded-md border bg-background px-3 py-2 text-sm"
             >
               <option value="">Semua toko</option>
               {(data?.daftarToko ?? []).map((t) => (
@@ -390,7 +390,7 @@ export default function KehadiranReport({ canMarkIzin }: { canMarkIzin: boolean 
                   {t.nama}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         </CardContent>
       </Card>

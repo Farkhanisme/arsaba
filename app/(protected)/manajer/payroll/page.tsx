@@ -28,12 +28,12 @@ export default async function ManajerPayrollPage({
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
     return (
-      <main className="container mx-auto max-w-7xl p-6">
+      <div className="mx-auto max-w-3xl">
         <h1 className="text-2xl font-bold">Akses ditolak</h1>
         <p className="mt-2 text-muted-foreground">
           Halaman ini hanya untuk Manajer.
         </p>
-      </main>
+      </div>
     );
   }
 

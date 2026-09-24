@@ -31,12 +31,12 @@ export default async function VerifikasiAbsensiDetailPage({
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
     return (
-      <main className="container mx-auto max-w-3xl p-6">
+      <div className="mx-auto max-w-3xl">
         <h1 className="text-2xl font-bold">Akses ditolak</h1>
         <p className="mt-2 text-muted-foreground">
           Halaman verifikasi hanya untuk Supervisor, Admin, dan Manajer.
         </p>
-      </main>
+      </div>
     );
   }
 
@@ -73,13 +73,15 @@ export default async function VerifikasiAbsensiDetailPage({
   });
 
   return (
-    <main className="container mx-auto max-w-3xl p-6">
+    <div className="mx-auto max-w-3xl space-y-6">
       <Breadcrumb autoGenerate />
 
-      <h1 className="mt-2 text-2xl font-bold">{attendance.employee.nama}</h1>
-      <p className="text-sm text-muted-foreground">{attendance.store.nama}</p>
+      <div>
+        <h1 className="text-2xl font-bold">{attendance.employee.nama}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{attendance.store.nama}</p>
+      </div>
 
-      <Card className="mt-6">
+      <Card>
         <CardHeader>
           <CardTitle className="text-base">Ringkasan Shift</CardTitle>
         </CardHeader>
@@ -101,8 +103,8 @@ export default async function VerifikasiAbsensiDetailPage({
         </CardContent>
       </Card>
 
-      <h2 className="mt-6 text-lg font-semibold">Riwayat Log</h2>
-      <div className="mt-2 space-y-4">
+      <h2 className="text-lg font-semibold">Riwayat Log</h2>
+      <div className="space-y-3">
         {attendance.logs.map((log) => (
           <LogCard
             key={log.id}
@@ -132,6 +134,6 @@ export default async function VerifikasiAbsensiDetailPage({
         <OverrideKeluarForm attendanceId={attendance.id} />
       )}
       </div>
-    </main>
+    </div>
   );
 }

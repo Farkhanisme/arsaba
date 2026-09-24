@@ -31,12 +31,12 @@ export default async function VerifikasiAgendaPage() {
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
     return (
-      <main className="container mx-auto max-w-3xl p-6">
+      <div className="mx-auto max-w-3xl">
         <h1 className="text-2xl font-bold">Akses ditolak</h1>
         <p className="mt-2 text-muted-foreground">
           Halaman verifikasi hanya untuk Supervisor, Admin, dan Manajer.
         </p>
-      </main>
+      </div>
     );
   }
 

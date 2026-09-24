@@ -210,7 +210,7 @@ export function AbsensiForm({ mode = "check-in" }: Props) {
         <CardTitle>{judul}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="space-y-2">
+        <div className="space-y-1">
           <Label>Foto {mode === "check-in" ? "Masuk" : "Keluar"}</Label>
 
           <div className={`relative overflow-hidden rounded-md border bg-black ${capturedFile ? "hidden" : ""}`}>
@@ -263,7 +263,7 @@ export function AbsensiForm({ mode = "check-in" }: Props) {
           <canvas ref={canvasRef} className="hidden" />
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-1">
           <Label>Lokasi (opsional)</Label>
           <Button type="button" variant="outline" onClick={handleAmbilLokasi} disabled={lokasiStatus === "loading"}>
             {lokasiStatus === "loading" ? "Mengambil..." : "Ambil Lokasi"}

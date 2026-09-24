@@ -45,12 +45,12 @@ export default async function DashboardPage() {
   const currentPeriode = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <Breadcrumb autoGenerate />
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold">Beranda</h1>
-          <p className="text-sm text-muted-foreground">Selamat datang, {user.nama}</p>
+          <h1 className="text-2xl font-bold">Beranda</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Selamat datang, {user.nama}</p>
         </div>
       </div>
 

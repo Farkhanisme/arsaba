@@ -222,7 +222,7 @@ export function LogCard({ attendanceId, log, jadwalAcuan = [] }: Props) {
         )}
 
         {status === "PENDING_VERIFIKASI" && mode === "reject" && (
-          <div className="mt-3 space-y-2 border-t pt-3">
+          <div className="mt-3 space-y-1 border-t pt-3">
             <Label htmlFor={`reason-${log.id}`}>Alasan penolakan</Label>
             <Input
               id={`reason-${log.id}`}

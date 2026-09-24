@@ -20,12 +20,12 @@ export default async function ManajerGajiPage() {
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
     return (
-      <main className="container mx-auto max-w-3xl p-6">
+      <div className="mx-auto max-w-3xl">
         <h1 className="text-2xl font-bold">Akses ditolak</h1>
         <p className="mt-2 text-muted-foreground">
           Halaman ini hanya untuk Manajer.
         </p>
-      </main>
+      </div>
     );
   }
 
@@ -59,7 +59,7 @@ export default async function ManajerGajiPage() {
         </p>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         {users.length === 0 && (
           <p className="text-muted-foreground">
             Belum ada karyawan aktif yang bisa diatur gajinya.

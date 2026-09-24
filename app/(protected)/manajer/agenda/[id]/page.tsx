@@ -1,7 +1,6 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect, notFound } from "next/navigation";
-import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AssignForm } from "@/components/agenda/assign-form";
 import { NominalTemplateForm } from "@/components/agenda/nominal-template-form";
@@ -35,12 +34,12 @@ export default async function DetailTemplatePage({
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
     return (
-      <main className="container mx-auto max-w-3xl p-6">
+      <div className="mx-auto max-w-3xl">
         <h1 className="text-2xl font-bold">Akses ditolak</h1>
         <p className="mt-2 text-muted-foreground">
           Halaman ini hanya untuk Admin, Supervisor, dan Manajer.
         </p>
-      </main>
+      </div>
     );
   }
 
@@ -84,13 +83,6 @@ export default async function DetailTemplatePage({
   return (
     <div className="space-y-6">
       <Breadcrumb autoGenerate />
-
-      <Link
-        href="/manajer/agenda"
-        className="text-sm text-muted-foreground hover:underline"
-      >
-        ← Kembali ke daftar
-      </Link>
 
       <div>
         <h1 className="text-2xl font-bold">{template.judul}</h1>

@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 
 type Store = {
   id: string;
@@ -52,12 +53,11 @@ export function FilterJadwal({ stores, initial }: Props) {
       <div className="grid gap-3 md:grid-cols-4">
         <div className="space-y-1">
           <Label htmlFor="filter-store">Toko</Label>
-          <select
+          <Select
             id="filter-store"
             value={storeId}
             onChange={(e) => setStoreId(e.target.value)}
             disabled={isPending}
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           >
             <option value="">— pilih toko —</option>
             {stores.map((s) => (
@@ -65,7 +65,7 @@ export function FilterJadwal({ stores, initial }: Props) {
                 {s.nama}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
 
         <div className="space-y-1">
@@ -92,17 +92,16 @@ export function FilterJadwal({ stores, initial }: Props) {
 
         <div className="space-y-1">
           <Label htmlFor="filter-status">Status</Label>
-          <select
+          <Select
             id="filter-status"
             value={statusJadwal}
             onChange={(e) => setStatusJadwal(e.target.value)}
             disabled={isPending}
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           >
             <option value="">— semua —</option>
             <option value="DRAFT">DRAFT</option>
             <option value="APPROVED">APPROVED</option>
-          </select>
+          </Select>
         </div>
       </div>
 
