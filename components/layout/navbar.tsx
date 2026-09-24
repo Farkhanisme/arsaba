@@ -35,9 +35,14 @@ function menuUntukRole(role: Role): MenuItem[] {
   ) {
     items.push({ href: "/verifikasi/absensi", label: "Verifikasi Absensi" });
     items.push({ href: "/verifikasi/agenda", label: "Verifikasi Agenda" });
+    items.push({ href: "/laporan/kehadiran", label: "Laporan Kehadiran" });
     items.push({ href: "/manajer/agenda", label: "Kelola Agenda" });
     items.push({ href: "/master/toko", label: "Master Toko" });
     items.push({ href: "/master/karyawan", label: "Master Karyawan" });
+  }
+
+  if (role === "DIREKTUR") {
+    items.push({ href: "/laporan/kehadiran", label: "Laporan Kehadiran" });
   }
 
   if (role === "MANAJER") {

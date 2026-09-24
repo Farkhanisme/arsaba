@@ -318,6 +318,7 @@ Berdasarkan file data karyawan yang diberikan client, field minimal untuk profil
 - **Gaji dihitung global**, dibebankan ke manajemen pusat (Arsaba Group), **bukan** per toko.
 - `Attendance.storeId` diisi toko tempat karyawan **benar-benar hadir** — untuk laporan kehadiran fisik. Payroll tidak memisahkan per toko.
 - `Attendance.isPam` di level Attendance (bukan User), karena satu karyawan bisa punya beberapa Attendance di hari yang sama dengan status PAM berbeda.
+- **Hari kerja dihitung per tanggal unik**: `totalHariKerja` = jumlah `tanggalShift` berbeda dari Attendance terverifikasi (`statusMasuk = "DIVERIFIKASI"`) dalam periode gaji — segmen PAM berganda di hari yang sama tetap dihitung **1 hari**. `totalMenitKerja` dan `potongan` tetap di-SUM dari semua segmen.
 
 ---
 
@@ -363,6 +364,20 @@ Berdasarkan file data karyawan yang diberikan client, field minimal untuk profil
 - **Audit log** wajib untuk: perubahan gaji pokok, bonus/potongan manual, hasil verifikasi (siapa approve/reject, kapan, alasan), perubahan master data toko/usaha.
 - **Riwayat mutasi/resign karyawan**: karyawan yang pindah toko atau berhenti tidak dihapus dari database — beri status (`aktif`/`resign`/`nonaktif`) dan simpan histori penempatan toko (tabel `riwayat_penempatan`) supaya data historis (gaji, absensi, laporan) tetap utuh untuk toko lama.
 - **Jenis izin**: `acara_pribadi`, `sakit` (bisa ditambah admin jika perlu jenis lain nanti).
+
+### 8.1 Laporan Kehadiran & Izin
+
+Laporan kehadiran lintas toko untuk audit (Direktur, Manajer, Admin, Supervisor):
+
+- **Hari jadwal (baseline)**: jumlah tanggal unik dengan `ShiftAssignment` pada `ShiftInstance` ber-`statusJadwal = APPROVED` dalam periode. Dua segmen di hari yang sama (NORMAL + PAM) dihitung 1 hari.
+- **Hari hadir**: jumlah `tanggalShift` unik dari `Attendance` dengan `statusMasuk = "DIVERIFIKASI"`, tanpa filter toko fisik — PAM di toko lain tetap dihitung "berangkat". Absensi `DITOLAK`/`PENDING_VERIFIKASI` tidak dihitung hadir.
+- **Hari izin**: jumlah tanggal unik dengan record `Izin` yang tidak punya attendance terverifikasi. Hadir menang atas izin (record izin pada hari yang ternyata hadir dianggap terlewati). Hanya terhitung bila tanggal tersebut masuk hari jadwal di toko tersebut; izin pada hari tanpa jadwal tidak dihitung.
+- **Tidak hadir** = `max(0, jadwal − hadir)` = **Izin + Tanpa Keterangan**; **Tanpa Keterangan** = `max(0, jadwal − hadir − izin)`.
+- **Ketidakhadiran adalah nilai turunan, bukan record**: sistem tidak pernah membuat catatan "tidak hadir" sendiri. Tidak hadir otomatis terhitung dari baseline − kehadiran terverifikasi — termasuk karyawan yang tidak absen tanpa alasan dan tanpa konfirmasi (muncul sebagai "Tanpa Keterangan" tanpa aksi admin). Syaratnya ada jadwal APPROVED hari itu; tanpa jadwal, ketidakhadiran tidak bisa dinilai.
+- **Lensa ganda per toko**: laporan penugasan (jadwal & ketidakhadiran per toko tempat dijadwalkan) dan lensa fisik (`Attendance.storeId` = toko tempat benar-benar hadir, termasuk PAM).
+- **Catatan lensa lintas toko**: total di level "Semua Toko" adalah **penjumlahan lensa per toko**, bukan kehadiran unik perusahaan. Karyawan dapat tampil di dua toko sekaligus (mis. dijadwalkan di toko A awal bulan lalu pindah dan terdaftar AKTIF di toko B) sehingga hari-harinya terhitung dua kali di agregasi lintas toko — ini disengaja (lensa penugasan + lensa terdaftar). Rincian per tanggal (Scope B) menyediakan lensa per hari.
+- **Model `Izin`**: satu record = satu tanggal (`@@unique([employeeId, tanggal])`), `alasan` teks bebas wajib (maks 200 karakter), dicatat `createdBy`, dan setiap create/delete wajib masuk `AuditLog`. Menandai/membatalkan: Manajer, Admin, Supervisor (Direktur lihat saja). Range izin dipecah menjadi record per hari. Tanggal izin **tidak boleh sebelum hari ini (WIB)** — baik saat menandai (POST menolak 400) maupun membatalkan (DELETE menolak 400) — sehingga izin tanggal lewat tidak bisa masuk dan tidak bisa diubah.
+- **Catatan**: daftar jenis izin di atas (`acara_pribadi`, `sakit`) belum dimodelkan sebagai master terpisah — v1 memakai `alasan` teks bebas. Master jenis izin yang bisa dikelola admin adalah pengembangan lanjutan (lihat §12).
 
 ---
 
@@ -410,6 +425,7 @@ Sebagian besar poin di versi sebelumnya sudah terjawab (lihat riwayat perubahan 
 
 1. **Detail integrasi Epos**: sedang ditanyakan pemilik proyek ke client — tunggu jawaban sebelum memutuskan apakah modul Epos (§4.2.1) perlu konektor otomatis atau cukup form manual.
 2. **Modul spesifik Counter Dieng**: sedang dikonfirmasi pemilik proyek ke client — field/produk spesifik yang dijual di sana (apakah sama dengan daftar produk Pulsa/PPOB di §4.2.3 atau ada tambahan/pengurangan) menyusul setelah ada jawaban.
+3. **Alasan ketidakhadiran kini dimodelkan via `Izin`** (§8.1: Manajer/Admin/Supervisor menandai per tanggal + alasan teks bebas). **Masih belum dimodelkan**: master jenis izin terpisah (`acara_pribadi`/`sakit` yang bisa dikelola admin), bukti/surat sakit (dokumen), dan kaitan otomatis izin → PAM (§5.3) — menunggu konfirmasi.
 
 ---
 
