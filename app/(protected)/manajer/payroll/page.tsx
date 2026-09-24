@@ -10,6 +10,7 @@ import PayrollGenerateForm from "./_components/PayrollGenerateForm";
 import PayrollTable from "./_components/PayrollTable";
 import PayrollFilter from "./_components/PayrollFilter";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { AccessDenied } from "@/components/ui/access-denied";
 
 const ALLOWED_ROLES: Role[] = ["MANAJER"];
 
@@ -27,14 +28,7 @@ export default async function ManajerPayrollPage({
   if (!session?.user) redirect("/login");
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
-    return (
-      <div className="mx-auto max-w-3xl">
-        <h1 className="text-2xl font-bold">Akses ditolak</h1>
-        <p className="mt-2 text-muted-foreground">
-          Halaman ini hanya untuk Manajer.
-        </p>
-      </div>
-    );
+    return <AccessDenied description="Halaman ini hanya untuk Manajer." />;
   }
 
   const { periode: periodeParam, status: statusParam } = await searchParams;

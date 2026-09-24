@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { GajiForm } from "@/components/user/gaji-form";
 import type { Role } from "@prisma/client";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { AccessDenied } from "@/components/ui/access-denied";
 
 const ALLOWED_ROLES: Role[] = ["MANAJER"];
 const TARGET_ROLES: Role[] = ["SUPERVISOR", "ADMIN", "KEPALA_TOKO", "KARYAWAN"];
@@ -19,14 +20,7 @@ export default async function ManajerGajiPage() {
   if (!session?.user) redirect("/login");
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
-    return (
-      <div className="mx-auto max-w-3xl">
-        <h1 className="text-2xl font-bold">Akses ditolak</h1>
-        <p className="mt-2 text-muted-foreground">
-          Halaman ini hanya untuk Manajer.
-        </p>
-      </div>
-    );
+    return <AccessDenied description="Halaman ini hanya untuk Manajer." />;
   }
 
   const users = await prisma.user.findMany({

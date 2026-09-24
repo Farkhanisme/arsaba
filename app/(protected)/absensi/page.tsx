@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { AbsensiForm } from "@/components/absensi/absensi-form";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { AccessDenied } from "@/components/ui/access-denied";
 
 const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
 
@@ -22,14 +23,7 @@ export default async function AbsensiPage() {
 
   const role = session.user.role;
   if (role !== "KARYAWAN" && role !== "KEPALA_TOKO") {
-    return (
-      <div className="mx-auto max-w-xl">
-        <h1 className="text-2xl font-bold">Akses ditolak</h1>
-        <p className="mt-2 text-muted-foreground">
-          Halaman absensi hanya untuk Karyawan dan Kepala Toko.
-        </p>
-      </div>
-    );
+    return <AccessDenied description="Halaman absensi hanya untuk Karyawan dan Kepala Toko." />;
   }
 
   const shiftAktif = await prisma.attendance.findFirst({
@@ -40,7 +34,7 @@ export default async function AbsensiPage() {
   const mode = shiftAktif ? "check-out" : "check-in";
 
   return (
-    <div className="mx-auto max-w-xl space-y-6">
+    <div className="space-y-6">
       <Breadcrumb autoGenerate />
       <div>
         <h1 className="text-2xl font-bold">Absensi</h1>

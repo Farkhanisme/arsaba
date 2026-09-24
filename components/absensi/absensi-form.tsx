@@ -213,7 +213,7 @@ export function AbsensiForm({ mode = "check-in" }: Props) {
         <div className="space-y-1">
           <Label>Foto {mode === "check-in" ? "Masuk" : "Keluar"}</Label>
 
-          <div className={`relative overflow-hidden rounded-md border bg-black ${capturedFile ? "hidden" : ""}`}>
+          <div className={`relative mx-auto w-full max-w-xl overflow-hidden rounded-md border bg-black ${capturedFile ? "hidden" : ""}`}>
             <video
               ref={videoRef}
               playsInline

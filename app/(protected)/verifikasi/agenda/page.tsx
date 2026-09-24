@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Role } from "@prisma/client";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { AccessDenied } from "@/components/ui/access-denied";
 
 const ALLOWED_ROLES: Role[] = ["SUPERVISOR", "ADMIN", "MANAJER"];
 
@@ -30,14 +31,7 @@ export default async function VerifikasiAgendaPage() {
   if (!session?.user) redirect("/login");
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
-    return (
-      <div className="mx-auto max-w-3xl">
-        <h1 className="text-2xl font-bold">Akses ditolak</h1>
-        <p className="mt-2 text-muted-foreground">
-          Halaman verifikasi hanya untuk Supervisor, Admin, dan Manajer.
-        </p>
-      </div>
-    );
+    return <AccessDenied description="Halaman verifikasi hanya untuk Supervisor, Admin, dan Manajer." />;
   }
 
   const daftar = await prisma.agenda.findMany({

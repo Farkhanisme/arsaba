@@ -268,6 +268,42 @@ Berdasarkan file data karyawan yang diberikan client, field minimal untuk profil
 | Modal / Laba | Opsional, dihitung otomatis kalau modal diisi |
 | Foto bukti | Opsional |
 
+### 4.5 Penyetoran Uang antar Toko & Pusat
+
+Jejak transfer uang tunai dari satu toko ke toko lain atau ke Kantor Pusat, tercatat **by tanggal & by pelaku**, dengan bukti foto di kedua sisi (saat setor & saat terima). Ini **bukan rekonsiliasi kas** — tidak menyentuh `SalesRecord`/saldo/omset (hindari dobel-catat dengan rekap Epos §4.2.1); integrasi ke saldo dibahas belakangan.
+
+**Alur:**
+1. Kepala Toko A membuat setoran (tujuan: toko B atau Kantor Pusat) → status `MENUNGGU_KONFIRMASI`.
+2. Kepala Toko B (untuk tujuan TOKO) atau Manajer/Admin (untuk tujuan PUSAT) mengonfirmasi dengan nominal diterima + foto bukti terima → status `DITERIMA`.
+3. Koreksi sebelum diterima: pengirim membatalkan dengan alasan wajib → status `DIBATALKAN` (salah input nominal → batalkan & buat ulang, jangan edit).
+
+**Aturan nominal & selisih:**
+- `nominalDisetor` integer rupiah > 0, **immutable** setelah submit (batas atas = max integer PostgreSQL).
+- `nominalDiterima` boleh berbeda; `selisih = nominalDiterima − nominalDisetor` **dihitung server** (jangan percaya angka client). Bila `selisih ≠ 0`, `keteranganSelisih` **wajib** diisi; UI menampilkan badge selisih + keterangannya.
+- Tidak bisa setor ke toko sendiri.
+
+**RBAC (ditegakkan di API route, bukan hanya UI):**
+
+| Aksi | KARYAWAN | KEPALA_TOKO | SUPERVISOR | ADMIN | MANAJER | DIREKTUR |
+|---|---|---|---|---|---|---|
+| Buat setoran (dari tokonya) | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| Konfirmasi terima (tujuan = tokonya) | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| Konfirmasi terima (tujuan PUSAT) | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ |
+| Batalkan setoran (yang ia buat) | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| Lihat semua setoran (audit) | ✗ | ✗ (hanya yang melibatkan tokonya) | ✓ | ✓ | ✓ | ✓ |
+
+Kepala Toko hanya melihat transaksi yang melibatkan tokonya (sebagai pengirim atau penerima); Direktur/Supervisor lihat saja. Karyawan tidak punya akses ke modul ini sama sekali.
+
+**Status & konkurensi:** hanya `MENUNGGU_KONFIRMASI` yang bisa bertransisi ke `DITERIMA`/`DIBATALKAN`; transisi memakai guard atomik ber-kondisi di database sehingga request konkuren (terima-vs-batal) hanya menghasilkan satu pemenang, sisanya 409.
+
+**Foto bukti:** wajib ≥ 1 foto untuk setor **dan** ≥ 1 foto untuk terima (maks 5 file per aksi, maks 10 MB/file, `jpeg/png/webp`). Upload lewat form aplikasi → server teruskan ke Telegram sebagai backend penyimpanan (§10) → simpan `file_id`, bukan URL sementara. Tampilkan via proxy existing (jangan panggil `getFile` dari client).
+
+**Filter & periode:** halaman terima wajib menampilkan filter `periode` (default bulan berjalan WIB) + filter `toko` (opsional; untuk Kepala Toko terkunci ke tokonya). Batas periode memakai tengah malam WIB karena `disetorkanPada` adalah timestamp penuh. Halaman: `/setoran` (kirim, hanya Kepala Toko) dan `/setoran/terima` (terima/pusat + audit lintas toko).
+
+**Audit:** setiap aksi (buat, terima, batal) wajib masuk `AuditLog`. Notifikasi push (OneSignal) untuk setoran **dilewati di v1**.
+
+**Keputusan interim:** tujuan PUSAT memakai `tipeTujuan = PUSAT` dengan `tokoTujuanId = null` — **tanpa** entitas Store "Kantor Pusat" (lihat §12).
+
 ### 5.1 Absensi
 - Karyawan (Supervisor ke bawah, termasuk Kepala Toko) absen lewat foto + geolokasi.
 - Geolokasi **hanya informasi pembantu** bagi verifikator — bukan syarat mutlak/blocking. Karyawan tetap bisa absen dari lokasi mana pun; sistem hanya menampilkan jarak dari toko sebagai referensi saat admin/supervisor memverifikasi.
@@ -361,7 +397,7 @@ Berdasarkan file data karyawan yang diberikan client, field minimal untuk profil
 
 ## 8. Riwayat, Audit, & Data Historis
 
-- **Audit log** wajib untuk: perubahan gaji pokok, bonus/potongan manual, hasil verifikasi (siapa approve/reject, kapan, alasan), perubahan master data toko/usaha.
+- **Audit log** wajib untuk: perubahan gaji pokok, bonus/potongan manual, hasil verifikasi (siapa approve/reject, kapan, alasan), perubahan master data toko/usaha, dan setiap aksi penyetoran uang (buat/terima/batal, §4.5).
 - **Riwayat mutasi/resign karyawan**: karyawan yang pindah toko atau berhenti tidak dihapus dari database — beri status (`aktif`/`resign`/`nonaktif`) dan simpan histori penempatan toko (tabel `riwayat_penempatan`) supaya data historis (gaji, absensi, laporan) tetap utuh untuk toko lama.
 - **Jenis izin**: `acara_pribadi`, `sakit` (bisa ditambah admin jika perlu jenis lain nanti).
 
@@ -426,6 +462,7 @@ Sebagian besar poin di versi sebelumnya sudah terjawab (lihat riwayat perubahan 
 1. **Detail integrasi Epos**: sedang ditanyakan pemilik proyek ke client — tunggu jawaban sebelum memutuskan apakah modul Epos (§4.2.1) perlu konektor otomatis atau cukup form manual.
 2. **Modul spesifik Counter Dieng**: sedang dikonfirmasi pemilik proyek ke client — field/produk spesifik yang dijual di sana (apakah sama dengan daftar produk Pulsa/PPOB di §4.2.3 atau ada tambahan/pengurangan) menyusul setelah ada jawaban.
 3. **Alasan ketidakhadiran kini dimodelkan via `Izin`** (§8.1: Manajer/Admin/Supervisor menandai per tanggal + alasan teks bebas). **Masih belum dimodelkan**: master jenis izin terpisah (`acara_pribadi`/`sakit` yang bisa dikelola admin), bukti/surat sakit (dokumen), dan kaitan otomatis izin → PAM (§5.3) — menunggu konfirmasi.
+4. **Penyetoran uang v1 sudah diimplementasikan (§4.5)** — setoran ke PUSAT memakai `tipeTujuan = PUSAT` tanpa entitas Store pusat. **Belum diputuskan**: kapan membuat Store "Kantor Pusat" + field `tipeStore` + filter modul operasional (dibutuhkan saat fitur absensi admin/supervisor di pusat dikerjakan — saat itu setoran ke pusat bisa mengisi `tokoTujuanId`). Juga belum diputuskan: apakah Admin/Supervisor boleh membuat setoran sebagai pengganti Kepala Toko (v1: hanya Kepala Toko).
 
 ---
 

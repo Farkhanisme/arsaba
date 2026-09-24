@@ -1,12 +1,12 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect, notFound } from "next/navigation";
-import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { UserForm } from "@/components/user/user-form";
 import { ResetPasswordForm } from "@/components/user/reset-password-form";
 import type { Role } from "@prisma/client";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { AccessDenied } from "@/components/ui/access-denied";
 
 const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
 const RESETTABLE_TARGET_ROLES: Role[] = [
@@ -25,14 +25,7 @@ export default async function MasterKaryawanEditPage({
   if (!session?.user) redirect("/login");
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
-    return (
-      <div className="mx-auto max-w-3xl">
-        <h1 className="text-2xl font-bold">Akses ditolak</h1>
-        <p className="mt-2 text-muted-foreground">
-          Halaman ini hanya untuk Admin, Supervisor, dan Manajer.
-        </p>
-      </div>
-    );
+    return <AccessDenied description="Halaman ini hanya untuk Admin, Supervisor, dan Manajer." />;
   }
 
   const { id } = await params;

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { AccessDenied } from "@/components/ui/access-denied";
 
 const ALLOWED_ROLES = ["SUPERVISOR", "ADMIN", "MANAJER"];
 const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
@@ -27,14 +28,7 @@ export default async function VerifikasiAbsensiPage() {
   }
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
-    return (
-      <div className="mx-auto max-w-3xl">
-        <h1 className="text-2xl font-bold">Akses ditolak</h1>
-        <p className="mt-2 text-muted-foreground">
-          Halaman verifikasi hanya untuk Supervisor, Admin, dan Manajer.
-        </p>
-      </div>
-    );
+    return <AccessDenied description="Halaman verifikasi hanya untuk Supervisor, Admin, dan Manajer." />;
   }
 
   const daftar = await prisma.attendance.findMany({

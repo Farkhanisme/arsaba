@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { AccessDenied } from "@/components/ui/access-denied";
 import { SetoranHome } from "./_components/setoran-home";
 
 // Halaman SETOR — hanya KEPALA_TOKO (dari tokonya sendiri).
@@ -14,26 +15,12 @@ export default async function SetoranPage() {
   }
 
   if (session.user.role !== "KEPALA_TOKO") {
-    return (
-      <div className="mx-auto max-w-xl">
-        <h1 className="text-2xl font-bold">Akses ditolak</h1>
-        <p className="mt-2 text-muted-foreground">
-          Halaman setor uang hanya untuk Kepala Toko.
-        </p>
-      </div>
-    );
+    return <AccessDenied description="Halaman setor uang hanya untuk Kepala Toko." />;
   }
 
   const storeId = session.user.storeId;
   if (!storeId) {
-    return (
-      <div className="mx-auto max-w-xl">
-        <h1 className="text-2xl font-bold">Akses ditolak</h1>
-        <p className="mt-2 text-muted-foreground">
-          Akun ini tidak terhubung ke toko manapun.
-        </p>
-      </div>
-    );
+    return <AccessDenied description="Akun ini tidak terhubung ke toko manapun." />;
   }
 
   const tokoLain = await prisma.store.findMany({
@@ -43,7 +30,7 @@ export default async function SetoranPage() {
   });
 
   return (
-    <div className="mx-auto max-w-xl space-y-6">
+    <div className="space-y-6">
       <Breadcrumb autoGenerate />
       <div>
         <h1 className="text-2xl font-bold">Setor Uang</h1>

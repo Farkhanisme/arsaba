@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import { showUndoToast } from "@/components/ui/action-toast";
@@ -63,7 +63,6 @@ type Props = {
 };
 
 export default function PayrollDetailClient({ initialData }: Props) {
-  const router = useRouter();
   const [data, setData] = useState<PayrollData>(initialData);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLocking, setIsLocking] = useState(false);
@@ -192,7 +191,9 @@ export default function PayrollDetailClient({ initialData }: Props) {
   const previewTotalGaji = calculateTotalGaji();
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="space-y-6">
+      <Breadcrumb autoGenerate />
+
       <div>
         <h1 className="text-2xl font-bold">Detail Payroll</h1>
         <p className="mt-1 text-sm text-muted-foreground">

@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { AccessDenied } from "@/components/ui/access-denied";
 import { TerimaSetoran } from "./_components/terima-setoran";
 
 // Halaman TERIMA — KEPALA_TOKO (terkunci tokonya) + cross-store
@@ -17,25 +18,11 @@ export default async function TerimaSetoranPage() {
   }
 
   if (!(TERIMA_ROLES as readonly string[]).includes(session.user.role)) {
-    return (
-      <div className="mx-auto max-w-2xl">
-        <h1 className="text-2xl font-bold">Akses ditolak</h1>
-        <p className="mt-2 text-muted-foreground">
-          Halaman terima setoran tidak tersedia untuk role Anda.
-        </p>
-      </div>
-    );
+    return <AccessDenied description="Halaman terima setoran tidak tersedia untuk role Anda." />;
   }
 
   if (session.user.role === "KEPALA_TOKO" && !session.user.storeId) {
-    return (
-      <div className="mx-auto max-w-2xl">
-        <h1 className="text-2xl font-bold">Akses ditolak</h1>
-        <p className="mt-2 text-muted-foreground">
-          Akun ini tidak terhubung ke toko manapun.
-        </p>
-      </div>
-    );
+    return <AccessDenied description="Akun ini tidak terhubung ke toko manapun." />;
   }
 
   const stores = await prisma.store.findMany({
@@ -50,7 +37,7 @@ export default async function TerimaSetoranPage() {
       : null;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="space-y-6">
       <Breadcrumb autoGenerate />
       <div>
         <h1 className="text-2xl font-bold">Terima Setoran</h1>

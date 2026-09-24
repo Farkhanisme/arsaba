@@ -1,11 +1,11 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect, notFound } from "next/navigation";
-import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LogCard } from "@/components/verifikasi/log-card";
 import { OverrideKeluarForm } from "@/components/verifikasi/override-keluar-form";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { AccessDenied } from "@/components/ui/access-denied";
 
 const ALLOWED_ROLES = ["SUPERVISOR", "ADMIN", "MANAJER"];
 const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
@@ -30,14 +30,7 @@ export default async function VerifikasiAbsensiDetailPage({
   if (!session?.user) redirect("/login");
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
-    return (
-      <div className="mx-auto max-w-3xl">
-        <h1 className="text-2xl font-bold">Akses ditolak</h1>
-        <p className="mt-2 text-muted-foreground">
-          Halaman verifikasi hanya untuk Supervisor, Admin, dan Manajer.
-        </p>
-      </div>
-    );
+    return <AccessDenied description="Halaman verifikasi hanya untuk Supervisor, Admin, dan Manajer." />;
   }
 
   const { id } = await params;
@@ -73,7 +66,7 @@ export default async function VerifikasiAbsensiDetailPage({
   });
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="space-y-6">
       <Breadcrumb autoGenerate />
 
       <div>

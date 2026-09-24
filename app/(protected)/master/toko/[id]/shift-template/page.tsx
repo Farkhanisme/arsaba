@@ -2,11 +2,13 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { Role } from "@prisma/client";
 import { ShiftTemplateList } from "@/components/shift-template/shift-template-list";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { AccessDenied } from "@/components/ui/access-denied";
+import { NotFoundState } from "@/components/ui/not-found-state";
 
 const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
 
@@ -19,14 +21,7 @@ export default async function ShiftTemplateListPage({
   if (!session?.user) redirect("/login");
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
-    return (
-      <div className="mx-auto max-w-3xl">
-        <h1 className="text-2xl font-bold">Akses ditolak</h1>
-        <p className="mt-2 text-muted-foreground">
-          Halaman ini hanya untuk Admin, Supervisor, dan Manajer.
-        </p>
-      </div>
-    );
+    return <AccessDenied description="Halaman ini hanya untuk Admin, Supervisor, dan Manajer." />;
   }
 
   const { id } = await params;
@@ -38,12 +33,11 @@ export default async function ShiftTemplateListPage({
 
   if (!store) {
     return (
-      <div className="mx-auto max-w-3xl">
-        <h1 className="text-2xl font-bold">Toko tidak ditemukan</h1>
-        <Link href="/master/toko" className="mt-4 inline-block text-primary hover:underline">
-          Kembali ke Daftar Toko
-        </Link>
-      </div>
+      <NotFoundState
+        title="Toko tidak ditemukan"
+        actionLabel="Kembali ke Daftar Toko"
+        actionHref="/master/toko"
+      />
     );
   }
 

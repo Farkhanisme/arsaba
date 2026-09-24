@@ -82,7 +82,7 @@ export default function NominalAgendaPage() {
     }
 
     setIsBatchSubmitting(true);
-    const progressToast = showProgressToast({ message: "Memproses batch nominal...", isLoading: true });
+    showProgressToast({ message: "Memproses batch nominal...", isLoading: true });
     
     try {
       const body: Record<string, unknown> = { nominal: n };

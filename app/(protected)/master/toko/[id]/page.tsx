@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { StoreForm } from "@/components/store/store-form";
 import { ShiftTemplateList } from "@/components/shift-template/shift-template-list";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { AccessDenied } from "@/components/ui/access-denied";
 import type { Role } from "@prisma/client";
 
 const ALLOWED_ROLES: Role[] = ["ADMIN", "SUPERVISOR", "MANAJER"];
@@ -20,14 +21,7 @@ export default async function AdminTokoEditPage({
   if (!session?.user) redirect("/login");
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
-    return (
-      <div className="mx-auto max-w-3xl">
-        <h1 className="text-2xl font-bold">Akses ditolak</h1>
-        <p className="mt-2 text-muted-foreground">
-          Halaman ini hanya untuk Admin, Supervisor, dan Manajer.
-        </p>
-      </div>
-    );
+    return <AccessDenied description="Halaman ini hanya untuk Admin, Supervisor, dan Manajer." />;
   }
 
   const { id } = await params;

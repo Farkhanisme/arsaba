@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { AccessDenied } from "@/components/ui/access-denied";
 import KehadiranReport from "./_components/KehadiranReport";
 
 const ALLOWED_ROLES = ["DIREKTUR", "MANAJER", "ADMIN", "SUPERVISOR"];
@@ -14,14 +15,7 @@ export default async function LaporanKehadiranPage() {
   }
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
-    return (
-      <div className="mx-auto max-w-3xl">
-        <h1 className="text-2xl font-bold">Akses ditolak</h1>
-        <p className="mt-2 text-muted-foreground">
-          Laporan kehadiran hanya untuk Direktur, Manajer, Admin, dan Supervisor.
-        </p>
-      </div>
-    );
+    return <AccessDenied description="Laporan kehadiran hanya untuk Direktur, Manajer, Admin, dan Supervisor." />;
   }
 
   const canMarkIzin = MARK_ROLES.includes(session.user.role);

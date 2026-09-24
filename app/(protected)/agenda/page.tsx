@@ -6,6 +6,7 @@ import { SelesaiForm } from "@/components/agenda/selesai-form";
 import { LaporMandiriForm } from "@/components/agenda/lapor-mandiri-form";
 import type { Role } from "@prisma/client";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { AccessDenied } from "@/components/ui/access-denied";
 
 const ALLOWED_ROLES: Role[] = ["KARYAWAN", "KEPALA_TOKO"];
 
@@ -29,14 +30,7 @@ export default async function AgendaPage() {
   if (!session?.user) redirect("/login");
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
-    return (
-      <div className="mx-auto max-w-3xl">
-        <h1 className="text-2xl font-bold">Akses ditolak</h1>
-        <p className="mt-2 text-muted-foreground">
-          Halaman ini hanya untuk Karyawan dan Kepala Toko.
-        </p>
-      </div>
-    );
+    return <AccessDenied description="Halaman ini hanya untuk Karyawan dan Kepala Toko." />;
   }
 
   const items = await prisma.agenda.findMany({

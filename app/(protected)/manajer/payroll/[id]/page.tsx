@@ -1,18 +1,11 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import Link from "next/link";
 import type { Role } from "@prisma/client";
 import PayrollDetailClient from "./_components/PayrollDetailClient";
-import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { AccessDenied } from "@/components/ui/access-denied";
+import { NotFoundState } from "@/components/ui/not-found-state";
 
 const ALLOWED_ROLES: Role[] = ["MANAJER"];
-
-function formatRupiah(n: number | null): string {
-  if (n === null) return "—";
-  return "Rp" + n.toLocaleString("id-ID");
-}
 
 export default async function ManajerPayrollDetailPage({
   params,
@@ -23,14 +16,7 @@ export default async function ManajerPayrollDetailPage({
   if (!session?.user) redirect("/login");
 
   if (!ALLOWED_ROLES.includes(session.user.role)) {
-    return (
-      <div className="mx-auto max-w-3xl">
-        <h1 className="text-2xl font-bold">Akses ditolak</h1>
-        <p className="mt-2 text-muted-foreground">
-          Halaman ini hanya untuk Manajer.
-        </p>
-      </div>
-    );
+    return <AccessDenied description="Halaman ini hanya untuk Manajer." />;
   }
 
   const { id } = await params;
@@ -76,22 +62,14 @@ export default async function ManajerPayrollDetailPage({
 
   if (!payrollData) {
     return (
-      <div className="mx-auto max-w-3xl">
-        <h1 className="text-2xl font-bold">Payroll tidak ditemukan</h1>
-        <p className="mt-2 text-muted-foreground">
-          Data payroll tidak ditemukan atau terjadi kesalahan saat memuat.
-        </p>
-        <Link href="/manajer/payroll" className="mt-4 inline-block text-primary hover:underline">
-          Kembali ke Daftar Payroll
-        </Link>
-      </div>
+      <NotFoundState
+        title="Payroll tidak ditemukan"
+        description="Data payroll tidak ditemukan atau terjadi kesalahan saat memuat."
+        actionLabel="Kembali ke Daftar Payroll"
+        actionHref="/manajer/payroll"
+      />
     );
   }
 
-  return (
-    <>
-      <Breadcrumb autoGenerate />
-      <PayrollDetailClient initialData={payrollData} />
-    </>
-  );
+  return <PayrollDetailClient initialData={payrollData} />;
 }
