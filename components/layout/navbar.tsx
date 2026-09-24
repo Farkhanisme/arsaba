@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { Menu, X, LogOut } from "lucide-react";
@@ -71,7 +72,8 @@ export function Navbar({ user }: Props) {
   return (
     <header className="border-b bg-background">
       <div className="container mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
-        <Link href="/dashboard" className="font-bold">
+        <Link href="/dashboard" className="flex items-center gap-2 font-bold">
+          <Image src="/logo.png" alt="Logo Arsaba" width={512} height={512} className="h-7 w-7 object-contain" />
           Arsaba
         </Link>
 
@@ -100,7 +102,10 @@ export function Navbar({ user }: Props) {
           {/* Drawer */}
           <aside className="fixed inset-y-0 right-0 z-50 flex w-72 max-w-[80vw] flex-col bg-background shadow-lg">
             <div className="flex h-14 items-center justify-between border-b px-4">
-              <span className="font-bold">Arsaba</span>
+              <span className="flex items-center gap-2 font-bold">
+                <Image src="/logo.png" alt="Logo Arsaba" width={512} height={512} className="h-7 w-7 object-contain" />
+                Arsaba
+              </span>
               <button
                 type="button"
                 onClick={() => setOpen(false)}

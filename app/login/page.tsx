@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -71,6 +72,13 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center p-4 bg-background">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
+          <Image
+            src="/logo.png"
+            alt="Logo Arsaba"
+            width={512}
+            height={512}
+            className="mx-auto h-16 w-16 object-contain"
+          />
           <CardTitle className="text-2xl font-bold">Masuk ke Arsaba</CardTitle>
         </CardHeader>
         <CardContent>
