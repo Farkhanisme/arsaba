@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { NextRequest, NextResponse } from "next/server";
-import type { Prisma, Role } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import type { Role } from "@prisma/client";
 import {
   MAX_FOTO,
   MAX_KETERANGAN,
@@ -290,6 +291,34 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(serializeSetoran(created), { status: 201 });
   } catch (err) {
     console.error("POST /api/setoran error:", err);
+
+    // Anti transfer ganda. Unique index
+    // (dariStoreId, nominalDisetor, menitBucket) menolak request kedua dalam
+    // menit yang sama — ini yang menangkap double-click dan retry setelah
+    // timeout, yang tadinya menghasilkan dua record dan uang terhitung dua kali.
+    //
+    // Bucket menit diisi trigger database, jadi yang dilanggar hanya bisa unique
+    // index ini.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      // CATATAN: bukti sudah terupload ke Telegram SEBELUM transaksi (lihat
+      // upload di atas), jadi file-nya sekarang yatim. Saya tidak menghapusnya
+      // karena Telegram Bot API hanya bisa menghapus lewat `message_id`, sedangkan
+      // yang kita simpan adalah `file_id` — keduanya berbeda. Dihapus manual
+      // dari channel penyimpanan kalau kuota mulai mepet.
+      //
+      // Yang penting: record TIDAK jadi dibuat, jadi uang tidak terhitung dua
+      // kali. Dan user mendapat 409 yang bisa dibaca, bukan 500.
+      return NextResponse.json(
+        {
+          error:
+            "Setoran dengan nominal yang sama sudah dikirim pada menit ini. " +
+            "Kalau ini pengiriman ulang karena timeout, uang sudah aman — cek daftar sebelum mengirim lagi.",
+          kode: "SETORAN_DUPLIKAT",
+        },
+        { status: 409 }
+      );
+    }
+
     if (err instanceof Error && /telegram/i.test(err.message)) {
       return NextResponse.json(
         { error: `Gagal upload ke Telegram: ${err.message}` },

@@ -28,7 +28,8 @@ export async function GET(
       return NextResponse.json({ error: "fileId tidak valid" }, { status: 400 });
     }
 
-    const isVerifier = VERIFIER_ROLES.includes(session.user.role);
+    const role = session.user.role;
+    const isVerifier = VERIFIER_ROLES.includes(role);
 
     // File bisa milik AttendanceLog (foto absensi), BuktiSetoran (bukti setoran)
     // atau Agenda (bukti agenda). Semuanya wajib lolos cek otorisasi dulu.
@@ -49,14 +50,37 @@ export async function GET(
         where: { fileId },
         select: {
           setoran: {
-            select: { disetorkanOlehId: true, diterimaOlehId: true },
+            select: {
+              disetorkanOlehId: true,
+              diterimaOlehId: true,
+              tipeTujuan: true,
+              tokoTujuanId: true,
+            },
           },
         },
       });
       if (bukti) {
-        const { disetorkanOlehId, diterimaOlehId } = bukti.setoran;
+        const { disetorkanOlehId, diterimaOlehId, tipeTujuan, tokoTujuanId } =
+          bukti.setoran;
+        // Penerima yang BERWEWENANG ikut boleh, bukan cuma yang sudah menerima.
+        //
+        // Untuk setoran berstatus MENUNGGU_KONFIRMASI, `diterimaOlehId` masih
+        // null — jadi KEPALA_TOKO yang seharusnya mengonfirmasi tidak bisa
+        // melihat bukti yang harus dia periksa, dan gambarnya gagal load tepat
+        // di layar konfirmasi.
+        //
+        // Aturan ini menyalin PERSIS cek di
+        // `app/api/setoran/[id]/terima/route.ts` (cabang TOKO), jadi tidak ada
+        // sumber kebenaran kedua. Kalau tidak cocok di sana, tidak cocok di sini.
+        const berwenangMenerima =
+          role === "KEPALA_TOKO" &&
+          tipeTujuan === "TOKO" &&
+          tokoTujuanId !== null &&
+          session.user.storeId === tokoTujuanId;
+
         if (
           !isVerifier &&
+          !berwenangMenerima &&
           disetorkanOlehId !== session.user.id &&
           diterimaOlehId !== session.user.id
         ) {
