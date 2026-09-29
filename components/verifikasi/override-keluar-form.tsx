@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -10,14 +10,70 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type Props = {
   attendanceId: string;
+  /** ISO dari `Attendance.absenMasuk` — dipakai untuk batas bawah & pratinjau. */
+  absenMasuk?: string;
+  /** Tipe gaji karyawan; hanya `JAM` yang punya fitur Koreksi Jam. */
+  tipeGaji?: string | null;
 };
 
-export function OverrideKeluarForm({ attendanceId }: Props) {
+/** Batas atas selisih, cerminan `MAKS_SELISIH_MENIT` di route. */
+const MAKS_JAM = 24;
+
+/**
+ * Format `Date` -> nilai untuk `<input type="datetime-local">`.
+ *
+ * WAJIB zona lokal: `datetime-local` tidak menyimpan timezone, dan `new Date(x)`
+ * mem-parsenya sebagai waktu lokal. Kalau attrs `min`/`max` diisi dari
+ * `toISOString()` (UTC), batasnya bergeser 7 jam di WIB dan input yang sah
+ * ikut tertolak.
+ */
+function toLocalInputValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  );
+}
+
+function formatDurasi(menit: number): string {
+  const j = Math.floor(menit / 60);
+  const m = menit % 60;
+  return m === 0 ? `${j} jam` : `${j} jam ${m} menit`;
+}
+
+export function OverrideKeluarForm({
+  attendanceId,
+  absenMasuk,
+  tipeGaji,
+}: Props) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [waktu, setWaktu] = useState("");
   const [keterangan, setKeterangan] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Batas atas (sekarang) & bawah (waktu masuk) untuk input datetime-local.
+  // `datetime-local` memakai format "YYYY-MM-DDTHH:mm" dalam zona LOKAL, jadi
+  // batas harus diformat lokal juga — bukan `.toISOString()` yang UTC.
+  const maksWaktu = useMemo(() => toLocalInputValue(new Date()), []);
+  const minWaktu = useMemo(
+    () => (absenMasuk ? toLocalInputValue(new Date(absenMasuk)) : undefined),
+    [absenMasuk]
+  );
+
+  // Pratinjau durasi hasil override, supaya admin tahu efeknya sebelum menyimpan.
+  const pratinjau = useMemo(() => {
+    if (!waktu || !absenMasuk) return null;
+    const masuk = new Date(absenMasuk).getTime();
+    const keluar = new Date(waktu).getTime();
+    if (Number.isNaN(keluar) || Number.isNaN(masuk)) return null;
+    const menit = Math.floor((keluar - masuk) / 60_000);
+    if (menit < 0) return { menit, valid: false, alasan: "lebih awal dari waktu masuk" };
+    if (menit > MAKS_JAM * 60) {
+      return { menit, valid: false, alasan: `melebihi batas ${MAKS_JAM} jam` };
+    }
+    return { menit, valid: true, alasan: null };
+  }, [waktu, absenMasuk]);
 
   const kirim = useCallback(async () => {
     if (!waktu) {
@@ -81,10 +137,34 @@ export function OverrideKeluarForm({ attendanceId }: Props) {
                 id={`waktu-${attendanceId}`}
                 type="datetime-local"
                 value={waktu}
+                min={minWaktu}
+                max={maksWaktu}
                 onChange={(e) => setWaktu(e.target.value)}
                 disabled={isSubmitting}
               />
             </div>
+            {pratinjau && (
+              <p
+                className={`text-xs ${
+                  pratinjau.valid
+                    ? "text-muted-foreground"
+                    : "text-destructive"
+                }`}
+              >
+                {pratinjau.valid
+                  ? `Durasi kerja akan menjadi ${formatDurasi(pratinjau.menit)}.`
+                  : `Tidak valid: waktu keluar ${pratinjau.alasan}.`}
+                {pratinjau.valid && tipeGaji === "JAM" && (
+                  <>
+                    {" "}
+                    Kalau tujuannya menambah jam kerjadi atas, pakai
+                    fitur Koreksi Jam di halaman payslip — supaya jam tambahan
+                    tercatat sebagai keputusan Manajer, bukan hasil hitungan
+                    absensi.
+                  </>
+                )}
+              </p>
+            )}
             <div className="space-y-1">
               <Label htmlFor={`keterangan-${attendanceId}`}>Keterangan</Label>
               <Input

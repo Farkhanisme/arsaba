@@ -27,7 +27,7 @@ export default async function VerifikasiAbsensiDetailPage({
   const attendance = await prisma.attendance.findUnique({
     where: { id },
     include: {
-      employee: { select: { nama: true } },
+      employee: { select: { nama: true, tipePerhitunganGaji: true } },
       store: { select: { nama: true } },
       logs: {
         orderBy: { createdAt: "asc" },
@@ -110,8 +110,12 @@ export default async function VerifikasiAbsensiDetailPage({
           />
         ))}
         {attendance.absenKeluar === null && !attendance.autoClosed && (
-        <OverrideKeluarForm attendanceId={attendance.id} />
-      )}
+          <OverrideKeluarForm
+            attendanceId={attendance.id}
+            absenMasuk={attendance.absenMasuk.toISOString()}
+            tipeGaji={attendance.employee?.tipePerhitunganGaji ?? null}
+          />
+        )}
       </div>
     </div>
   );
