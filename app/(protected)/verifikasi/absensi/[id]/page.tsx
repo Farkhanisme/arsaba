@@ -6,20 +6,9 @@ import { LogCard } from "@/components/verifikasi/log-card";
 import { OverrideKeluarForm } from "@/components/verifikasi/override-keluar-form";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { AccessDenied } from "@/components/ui/access-denied";
+import { findShiftAcuan, formatWaktuWIB, saranMenitTelat } from "@/lib/absensi";
 
 const ALLOWED_ROLES = ["SUPERVISOR", "ADMIN", "MANAJER"];
-const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
-
-function formatWaktuWIB(date: Date | null): string {
-  if (!date) return "-";
-  const wib = new Date(date.getTime() + WIB_OFFSET_MS);
-  const yyyy = wib.getUTCFullYear();
-  const mm = String(wib.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(wib.getUTCDate()).padStart(2, "0");
-  const hh = String(wib.getUTCHours()).padStart(2, "0");
-  const mi = String(wib.getUTCMinutes()).padStart(2, "0");
-  return `${dd}/${mm}/${yyyy} ${hh}:${mi} WIB`;
-}
 
 export default async function VerifikasiAbsensiDetailPage({
   params,
@@ -49,21 +38,10 @@ export default async function VerifikasiAbsensiDetailPage({
 
   if (!attendance) notFound();
 
-  const jadwalAcuan = await prisma.shiftAssignment.findMany({
-    where: {
-      employeeId: attendance.employeeId,
-      shiftInstance: {
-        tanggal: attendance.tanggalShift,
-        statusJadwal: "APPROVED",
-      },
-    },
-    select: {
-      segmen: true,
-      jamMulai: true,
-      jamSelesai: true,
-    },
-    orderBy: { jamMulai: "asc" },
-  });
+  // Shift acuan dihitung dari jam absen masuk, bukan dari tanggalShift, supaya
+  // suggestion menit telat konsisten dengan logika check-in.
+  const shiftAcuan = await findShiftAcuan(attendance.employeeId, attendance.absenMasuk);
+  const saranTelat = saranMenitTelat(attendance.absenMasuk, shiftAcuan?.jamMulai ?? null);
 
   return (
     <div className="space-y-6">
@@ -71,7 +49,9 @@ export default async function VerifikasiAbsensiDetailPage({
 
       <div>
         <h1 className="text-2xl font-bold">{attendance.employee.nama}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{attendance.store.nama}</p>
+        <p className="text-sm text-muted-foreground">
+          {attendance.store?.nama ?? "Tanpa Toko"}
+        </p>
       </div>
 
       <Card>
@@ -102,11 +82,17 @@ export default async function VerifikasiAbsensiDetailPage({
           <LogCard
             key={log.id}
             attendanceId={attendance.id}
-            jadwalAcuan={jadwalAcuan.map((j) => ({
-              segmen: j.segmen,
-              jamMulai: j.jamMulai.toISOString(),
-              jamSelesai: j.jamSelesai.toISOString(),
-            }))}
+            shiftAcuan={
+              shiftAcuan
+                ? {
+                    segmen: shiftAcuan.segmen,
+                    jamMulai: shiftAcuan.jamMulai.toISOString(),
+                    jamSelesai: shiftAcuan.jamSelesai.toISOString(),
+                  }
+                : null
+            }
+            saranMenitTelat={saranTelat}
+            isPamAwal={attendance.isPam}
             log={{
               id: log.id,
               jenis: log.jenis,
@@ -123,7 +109,7 @@ export default async function VerifikasiAbsensiDetailPage({
             }}
           />
         ))}
-      {attendance.absenKeluar === null && (
+        {attendance.absenKeluar === null && !attendance.autoClosed && (
         <OverrideKeluarForm attendanceId={attendance.id} />
       )}
       </div>

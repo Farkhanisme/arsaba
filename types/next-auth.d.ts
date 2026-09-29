@@ -12,6 +12,7 @@ declare module "next-auth" {
       storeId: string | null;
       status: StatusKaryawan;
       nama: string;
+      bolehAbsenTanpaShift: boolean;
     } & DefaultSession["user"];
   }
 
@@ -21,6 +22,7 @@ declare module "next-auth" {
     storeId: string | null;
     status: StatusKaryawan;
     nama: string;
+    bolehAbsenTanpaShift: boolean;
   }
 }
 
@@ -32,6 +34,7 @@ declare module "next-auth/jwt" {
     storeId: string | null;
     status: StatusKaryawan;
     nama: string;
+    bolehAbsenTanpaShift: boolean;
   }
 }
 

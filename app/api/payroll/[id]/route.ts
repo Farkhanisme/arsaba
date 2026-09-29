@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { payrollInclude, petakanPayroll } from "@/lib/payroll-view";
 import { NextRequest, NextResponse } from "next/server";
 import type { Role } from "@prisma/client";
 
@@ -63,20 +64,7 @@ export async function GET(
 
     const payroll = await prisma.payroll.findUnique({
       where: { id },
-      include: {
-        employee: {
-          select: {
-            id: true,
-            kode: true,
-            nama: true,
-            role: true,
-            tipePerhitunganGaji: true,
-            tarifPerJam: true,
-            storeId: true,
-            store: { select: { id: true, nama: true } },
-          },
-        },
-      },
+      include: payrollInclude,
     });
 
     if (!payroll) {
@@ -89,26 +77,7 @@ export async function GET(
       return NextResponse.json({ error: "Tidak berwenang melihat payroll karyawan lain." }, { status: 403 });
     }
 
-    return NextResponse.json({
-      id: payroll.id,
-      employeeId: payroll.employeeId,
-      employee: payroll.employee,
-      periode: payroll.periode.toISOString(),
-      gajiPokok: payroll.gajiPokok,
-      totalHariKerja: payroll.totalHariKerja,
-      totalBonusAgenda: payroll.totalBonusAgenda,
-      totalPotonganTelat: payroll.totalPotonganTelat,
-      bonusManual: payroll.bonusManual,
-      potonganManual: payroll.potonganManual,
-      bonusPerforma: payroll.bonusPerforma,
-      keteranganBonusPerforma: payroll.keteranganBonusPerforma,
-      totalGaji: payroll.totalGaji,
-      status: payroll.status,
-      lockedAt: payroll.lockedAt?.toISOString() ?? null,
-      lockedById: payroll.lockedById ?? null,
-      createdAt: payroll.createdAt.toISOString(),
-      updatedAt: payroll.updatedAt.toISOString(),
-    });
+    return NextResponse.json(petakanPayroll(payroll));
   } catch (err) {
     console.error("GET /api/payroll/[id] error:", err);
     return NextResponse.json({ error: "Gagal mengambil detail payroll." }, { status: 500 });

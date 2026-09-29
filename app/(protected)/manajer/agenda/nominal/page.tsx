@@ -44,6 +44,7 @@ export default function NominalAgendaPage() {
   const [batchTemplateId, setBatchTemplateId] = useState("");
   const [batchNominal, setBatchNominal] = useState("");
   const [isBatchSubmitting, setIsBatchSubmitting] = useState(false);
+  const [templates, setTemplates] = useState<{ id: string; judul: string }[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -66,33 +67,112 @@ export default function NominalAgendaPage() {
     }
   }, []);
 
+  // Daftar template untuk dropdown. Sebelumnya UI meminta user MENGETIK cuid
+  // template secara manual - hampir pasti salah ketik, dan karena filter-nya
+  // opsional, bisa diam-diam menerapkan ke SELURUH sumber agenda.
+  const loadTemplates = useCallback(async () => {
+    try {
+      const res = await fetch("/api/agenda?status=DIVERIFIKASI");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return;
+      const unik = new Map<string, string>();
+      for (const a of (data.items as AgendaItem[]) ?? []) {
+        if (a.templateId && a.judul && !unik.has(a.templateId)) {
+          unik.set(a.templateId, a.judul);
+        }
+      }
+      setTemplates([...unik.entries()].map(([id, judul]) => ({ id, judul })));
+    } catch {
+      // bukan kritis - dropdown tetap bisa dikosongkan
+    }
+  }, []);
+
   useEffect(() => {
     load();
-  }, [load]);
+    loadTemplates();
+  }, [load, loadTemplates]);
 
+  /** Body request untuk nominal-batch, dipakai preview & commit. */
+  const buildBatchBody = (withPreview: boolean) => {
+    const b: Record<string, unknown> = { nominal: Number(batchNominal) };
+    if (withPreview) b.preview = true;
+    if (batchSumber) b.sumber = batchSumber;
+    if (batchTemplateId) b.templateId = batchTemplateId;
+    return b;
+  };
+
+  /**
+   * Dua tahap. Dulu route ini memakai `updateMany` massal tanpa preview, jadi
+   * satu klik bisa mengubah ratusan agenda lintas toko tanpa konfirmasi dan
+   * tanpa jejak audit. Sekarang: hitung dulu -> tunjukkan ke user -> konfirmasi.
+   */
   const kirimBatch = async () => {
     const n = Number(batchNominal);
     if (!Number.isInteger(n) || n < 0) {
       toast.error("Nominal harus angka bulat >= 0.");
       return;
     }
-    if (batchSumber === "" && batchTemplateId.trim() === "") {
+    if (batchSumber === "" && !batchTemplateId) {
       toast.error("Pilih minimal satu filter: sumber atau template.");
       return;
     }
 
     setIsBatchSubmitting(true);
-    showProgressToast({ message: "Memproses batch nominal...", isLoading: true });
-    
-    try {
-      const body: Record<string, unknown> = { nominal: n };
-      if (batchSumber) body.sumber = batchSumber;
-      if (batchTemplateId.trim()) body.templateId = batchTemplateId.trim();
+    showProgressToast({
+      message: "Menghitung agenda yang terdampak...",
+      isLoading: true,
+    });
 
+    try {
+      // Tahap 1 - preview (tidak mengubah apa pun).
+      const previewRes = await fetch("/api/agenda/nominal-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildBatchBody(true)),
+      });
+      const preview = await previewRes.json().catch(() => ({}));
+      if (!previewRes.ok) {
+        completeProgressToast(
+          false,
+          preview.error || `Gagal (HTTP ${previewRes.status})`
+        );
+        return;
+      }
+
+      const total: number = preview.total ?? 0;
+      const terkunci: number = preview.ditolakLocked ?? 0;
+
+      if (total === 0) {
+        completeProgressToast(
+          false,
+          preview.pesan || "Tidak ada agenda yang cocok."
+        );
+        return;
+      }
+
+      // Konfirmasi eksplisit dengan jumlah yang akan benar-benar berubah.
+      const contoh: string[] = Array.isArray(preview.sample)
+        ? preview.sample.map((s: { judul: string }) => s.judul)
+        : [];
+      const pesanKonfirmasi =
+        `Terapkan nominal ${formatRupiah(n)} ke ${total} agenda` +
+        (terkunci > 0
+          ? `\n(${terkunci} agenda dilewati karena payroll-nya sudah dikunci)`
+          : "") +
+        "?" +
+        (contoh.length > 0 ? `\n\nContoh:\n- ${contoh.join("\n- ")}` : "");
+
+      const yakin = window.confirm(pesanKonfirmasi);
+      if (!yakin) {
+        completeProgressToast(false, "Dibatalkan. Tidak ada agenda yang diubah.");
+        return;
+      }
+
+      // Tahap 2 - commit.
       const res = await fetch("/api/agenda/nominal-batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify(buildBatchBody(false)),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -103,7 +183,10 @@ export default function NominalAgendaPage() {
       showSuccessWithAction(
         `Berhasil set nominal ke ${data.updated} agenda.`,
         "Refresh",
-        () => { router.refresh(); load(); },
+        () => {
+          router.refresh();
+          load();
+        },
         10000
       );
       setBatchNominal("");
@@ -150,14 +233,25 @@ export default function NominalAgendaPage() {
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="batch-template">Template ID (opsional)</Label>
-              <Input
+              <Label htmlFor="batch-template">Template (opsional)</Label>
+              <Select
                 id="batch-template"
-                placeholder="cuid template master"
                 value={batchTemplateId}
                 onChange={(e) => setBatchTemplateId(e.target.value)}
                 disabled={isBatchSubmitting}
-              />
+              >
+                <option value="">— semua template —</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.judul}
+                  </option>
+                ))}
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Dulu field ini meminta cuid yang diketik manual. Pilih dari daftar
+                agar tidak salah — filter yang kosong berarti berlaku ke semua
+                template.
+              </p>
             </div>
 
             <div className="space-y-1">

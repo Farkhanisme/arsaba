@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { validasiTarif, NOMINAL_MAX } from "@/lib/gaji";
 import { NextRequest, NextResponse } from "next/server";
 import type { Role, TipePerhitunganGaji } from "@prisma/client";
 import { Prisma } from "@prisma/client";
@@ -7,16 +8,26 @@ import { Prisma } from "@prisma/client";
 const ALLOWED_ROLES: Role[] = ["MANAJER"];
 const TARGET_ROLES: Role[] = ["SUPERVISOR", "ADMIN", "KEPALA_TOKO", "KARYAWAN"];
 const TIPE_VALUES: TipePerhitunganGaji[] = ["HARIAN", "BULANAN", "JAM"];
-const NOMINAL_MAX = 100_000_000; // 100 juta
 
 type Body = {
   tipePerhitunganGaji?: unknown;
   tarifPerJam?: unknown;
+  tarifPerHari?: unknown;
   nominalGajiPokok?: unknown;
 };
 
 // PATCH /api/user/[id]/gaji — set/update gaji user. Hanya MANAJER.
-// Body: { tipePerhitunganGaji: "HARIAN"|"BULANAN"|"JAM", tarifPerJam?: number|null, nominalGajiPokok?: number }
+//
+// Setiap tipe punya tarif WAJIB-nya sendiri (lihat lib/gaji.ts validasiTarif):
+//   JAM     → tarifPerJam       (wajib)
+//   HARIAN  → tarifPerHari      (wajib)  ← tarif harian, BUKAN tarifPerJam x 8
+//   BULANAN → nominalGajiPokok  (wajib, boleh pakai nilai existing)
+//
+// Field yang tidak relevan untuk tipe aktif dinormalkan ke null, dan field yang
+// relevan WAJIB ada. Aturan inilah yang mencegah regresi P0-1: sebelumnya
+// tarifPerJam di-null-kan untuk tipe non-JAM tanpa ada pengganti untuk HARIAN,
+// sehingga baseGaji selalu Rp 0.
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -112,18 +123,27 @@ export async function PATCH(
       tarifPerJam = v;
     }
 
-    // Konsistensi: tipe JAM wajib ada tarifPerJam; tipe lain tarifPerJam boleh null
-    if (tipe === "JAM" && tarifPerJam === null) {
-      return NextResponse.json(
-        { error: "Tipe 'JAM' wajib menyertakan 'tarifPerJam'." },
-        { status: 400 }
-      );
-    }
-    if (tipe !== "JAM") {
-      tarifPerJam = null;
+    // Validasi tarifPerHari (nullable) — dipakai tipe HARIAN (§7.1).
+    // PENTING: tarif harian TIDAK boleh diturunkan dari tarifPerJam × 8,
+    // karena jam kerja berbeda per toko.
+    let tarifPerHari: number | null = null;
+    if (body.tarifPerHari !== undefined && body.tarifPerHari !== null) {
+      const v = body.tarifPerHari;
+      if (
+        typeof v !== "number" ||
+        !Number.isInteger(v) ||
+        v < 0 ||
+        v > NOMINAL_MAX
+      ) {
+        return NextResponse.json(
+          { error: `Field 'tarifPerHari' harus integer 0-${NOMINAL_MAX}.` },
+          { status: 400 }
+        );
+      }
+      tarifPerHari = v;
     }
 
-    // Validasi nominalGajiPokok (opsional; kalau diisi, akan upsert GajiPokok)
+    // Validasi nominalGajiPokok (hanya relevan untuk tipe BULANAN)
     let nominalGajiPokok: number | null = null;
     if (
       body.nominalGajiPokok !== undefined &&
@@ -144,6 +164,29 @@ export async function PATCH(
       nominalGajiPokok = v;
     }
 
+    // Normalisasi: field yang tidak relevan untuk tipe aktif dinormalkan ke null
+    // (supaya tidak ada data menetu yang diam-diam dipakai) — TAPI field yang
+    // WAJIB untuk tipe aktif harus ada. Aturan ini yang mencegah bug P0-1:
+    // dulu tarifPerJam di-null-kan tanpa ada pengganti untuk tipe HARIAN,
+    // sehingga baseGaji selalu 0.
+    if (tipe !== "JAM") tarifPerJam = null;
+    if (tipe !== "HARIAN") tarifPerHari = null;
+    if (tipe !== "BULANAN") nominalGajiPokok = null;
+
+    // Gaji pokok existing dipakai sebagai fallback untuk tipe BULANAN, supaya
+    // form tidak wajib diisi ulang setiap kali menyimpan.
+    const gajiPokokExisting = target.gajiPokok?.nominal ?? null;
+    const nilaiGajiPokok = nominalGajiPokok ?? gajiPokokExisting;
+
+    const pesanTarif = validasiTarif(tipe, {
+      tarifPerJam,
+      tarifPerHari,
+      gajiPokokNominal: nilaiGajiPokok,
+    });
+    if (pesanTarif) {
+      return NextResponse.json({ error: pesanTarif }, { status: 400 });
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       // Capture nilai sebelum untuk User
       const userBefore = await tx.user.findUnique({
@@ -152,6 +195,7 @@ export async function PATCH(
           id: true,
           tipePerhitunganGaji: true,
           tarifPerJam: true,
+          tarifPerHari: true,
         },
       });
 
@@ -167,6 +211,7 @@ export async function PATCH(
         data: {
           tipePerhitunganGaji: tipe,
           tarifPerJam,
+          tarifPerHari,
         },
       });
 
@@ -181,12 +226,14 @@ export async function PATCH(
                 id: userBefore.id,
                 tipePerhitunganGaji: userBefore.tipePerhitunganGaji,
                 tarifPerJam: userBefore.tarifPerJam,
+                tarifPerHari: userBefore.tarifPerHari,
               }
             : Prisma.JsonNull,
           nilaiSesudah: {
             id,
             tipePerhitunganGaji: tipe,
             tarifPerJam,
+            tarifPerHari,
           },
           actorId: session.user.id,
         },
@@ -222,6 +269,7 @@ export async function PATCH(
           nama: true,
           tipePerhitunganGaji: true,
           tarifPerJam: true,
+          tarifPerHari: true,
           gajiPokok: { select: { nominal: true } },
         },
       });
@@ -240,6 +288,7 @@ export async function PATCH(
       nama: result.nama,
       tipePerhitunganGaji: result.tipePerhitunganGaji,
       tarifPerJam: result.tarifPerJam,
+      tarifPerHari: result.tarifPerHari,
       nominalGajiPokok: result.gajiPokok?.nominal ?? null,
     });
   } catch (err) {

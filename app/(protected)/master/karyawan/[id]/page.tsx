@@ -45,6 +45,7 @@ export default async function MasterKaryawanEditPage({
       tanggalLahir: true,
       alamat: true,
       kontakDarurat: true,
+      bolehAbsenTanpaShift: true,
     },
   });
 
@@ -95,6 +96,7 @@ export default async function MasterKaryawanEditPage({
                 : null,
               alamat: user.alamat,
               kontakDarurat: user.kontakDarurat,
+              bolehAbsenTanpaShift: user.bolehAbsenTanpaShift,
             }}
           />
         </CardContent>

@@ -26,6 +26,7 @@ type InitialUser = {
   tanggalLahir: string | null;
   alamat: string | null;
   kontakDarurat: string | null;
+  bolehAbsenTanpaShift: boolean;
 };
 
 type Props =
@@ -70,6 +71,9 @@ export function UserForm(props: Props) {
   const [tanggalMasuk, setTanggalMasuk] = useState(
     isCreate ? "" : props.initial.tanggalMasuk?.slice(0, 10) ?? ""
   );
+  const [bolehAbsenTanpaShift, setBolehAbsenTanpaShift] = useState(
+    isCreate ? false : props.initial.bolehAbsenTanpaShift
+  );
 
   const [nik, setNik] = useState(isCreate ? "" : props.initial.nik ?? "");
   const [tempatLahir, setTempatLahir] = useState(
@@ -110,6 +114,7 @@ export function UserForm(props: Props) {
         tanggalLahir: tanggalLahir === "" ? null : tanggalLahir,
         alamat: alamat.trim() === "" ? null : alamat.trim(),
         kontakDarurat: kontakDarurat.trim() === "" ? null : kontakDarurat.trim(),
+        bolehAbsenTanpaShift,
       };
 
       if (isCreate) {
@@ -216,6 +221,24 @@ export function UserForm(props: Props) {
               </option>
             ))}
           </Select>
+        </div>
+
+        <div className="space-y-1">
+          <Label htmlFor="bolehAbsenTanpaShift">Absen tanpa shift</Label>
+          <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+            <input
+              id="bolehAbsenTanpaShift"
+              type="checkbox"
+              checked={bolehAbsenTanpaShift}
+              onChange={(e) => setBolehAbsenTanpaShift(e.target.checked)}
+              disabled={isSubmitting}
+            />
+            Boleh absen walau tidak punya jadwal shift
+          </label>
+          <p className="text-xs text-muted-foreground">
+            Jika tidak dicentang, check-in akan ditolak saat tidak ada jadwal
+            APPROVED pada hari itu.
+          </p>
         </div>
       </div>
 

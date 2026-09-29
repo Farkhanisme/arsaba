@@ -37,6 +37,7 @@ export default async function ManajerGajiPage() {
       role: true,
       tipePerhitunganGaji: true,
       tarifPerJam: true,
+      tarifPerHari: true,
       gajiPokok: { select: { nominal: true } },
       store: { select: { nama: true } },
     },
@@ -76,7 +77,8 @@ export default async function ManajerGajiPage() {
               </p>
               <p className="text-muted-foreground">
                 Tipe saat ini: {u.tipePerhitunganGaji ?? "belum ditentukan"} ·
-                Tarif/jam: {formatRupiah(u.tarifPerJam)} · Gaji pokok:{" "}
+                Tarif/jam: {formatRupiah(u.tarifPerJam)} · Tarif/hari:{" "}
+                {formatRupiah(u.tarifPerHari)} · Gaji pokok bulanan:{" "}
                 {formatRupiah(u.gajiPokok?.nominal ?? null)}
               </p>
               <div className="border-t pt-3">
@@ -85,6 +87,7 @@ export default async function ManajerGajiPage() {
                   initial={{
                     tipePerhitunganGaji: u.tipePerhitunganGaji,
                     tarifPerJam: u.tarifPerJam,
+                    tarifPerHari: u.tarifPerHari,
                     nominalGajiPokok: u.gajiPokok?.nominal ?? null,
                   }}
                 />

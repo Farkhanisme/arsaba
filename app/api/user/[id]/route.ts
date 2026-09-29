@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { bolehSetRole, PESAN_TIDAK_BERWENANG_ROLE } from "@/lib/rbac";
 import { NextRequest, NextResponse } from "next/server";
 import type { Role } from "@prisma/client";
 
@@ -24,6 +25,9 @@ type Body = {
   tanggalLahir?: unknown;
   alamat?: unknown;
   kontakDarurat?: unknown;
+  bolehAbsenTanpaShift?: unknown;
+  /** Alasan perubahan — opsional, disimpan di AuditLog & RiwayatPenempatan. */
+  alasan?: unknown;
 };
 
 // PATCH /api/user/[id] — update user (non-gaji).
@@ -46,6 +50,17 @@ export async function PATCH(
 
     const { id } = await params;
 
+    // Guard self-patch. Tanpa ini, SUPERVISOR bisa PATCH akunnya sendiri dengan
+    // { role: "MANAJER" } lalu langsung mendapat akses ke /manajer/gaji,
+    // /api/payroll/*, dan user/[id]/gaji. Route sequesta yang sudah punya guard
+    // ini: reset-password/route.ts dan [id]/gaji/route.ts.
+    if (id === session.user.id) {
+      return NextResponse.json(
+        { error: "Tidak bisa mengubah data akun sendiri dari halaman ini." },
+        { status: 400 }
+      );
+    }
+
     let body: Body;
     try {
       body = await request.json();
@@ -58,6 +73,18 @@ export async function PATCH(
       return NextResponse.json(
         { error: "User tidak ditemukan." },
         { status: 404 }
+      );
+    }
+
+    // Hierarki: actor tidak boleh menyentuh akun dengan role setinggi/lebih tinggi
+    // darinya. Exception MANAJER <-> DIREKTUR ditangani di bolehSetRole().
+    const actorRole = session.user.role;
+    if (!bolehSetRole(actorRole, existing.role)) {
+      return NextResponse.json(
+        {
+          error: "Tidak berwenang mengubah akun dengan role di atas atau sama dengan level Anda.",
+        },
+        { status: 403 }
       );
     }
 
@@ -81,6 +108,13 @@ export async function PATCH(
         return NextResponse.json(
           { error: "Field 'role' tidak valid." },
           { status: 400 }
+        );
+      }
+      // Hierarki: actor hanya boleh menetapkan role di bawah dirinya.
+      if (!bolehSetRole(actorRole, body.role as Role)) {
+        return NextResponse.json(
+          { error: PESAN_TIDAK_BERWENANG_ROLE },
+          { status: 403 }
         );
       }
       data.role = body.role;
@@ -156,6 +190,18 @@ export async function PATCH(
       }
     }
 
+    // Gate absensi tanpa shift: boleh check-in walau tidak punya
+    // ShiftInstance APPROVED pada tanggal check-in.
+    if (body.bolehAbsenTanpaShift !== undefined) {
+      if (typeof body.bolehAbsenTanpaShift !== "boolean") {
+        return NextResponse.json(
+          { error: "Field 'bolehAbsenTanpaShift' harus boolean." },
+          { status: 400 }
+        );
+      }
+      data.bolehAbsenTanpaShift = body.bolehAbsenTanpaShift;
+    }
+
     // PII fields — terima string atau null
     const piiFields = ["nik", "tempatLahir", "alamat", "kontakDarurat"] as const;
     for (const f of piiFields) {
@@ -214,18 +260,85 @@ export async function PATCH(
       );
     }
 
-    const updated = await prisma.user.update({
-      where: { id },
-      data,
-      select: {
-        id: true,
-        kode: true,
-        nama: true,
-        role: true,
-        status: true,
-        storeId: true,
-        tanggalMasuk: true,
-      },
+    // Fields yang benar-benar berubah — hanya ini yang masuk AuditLog.
+    // Field PII sengaja TIDAK ikut: jangan salin NIK/alamat ke audit log.
+    const JEJAK_PII = new Set([
+      "nik",
+      "tempatLahir",
+      "tanggalLahir",
+      "alamat",
+      "kontakDarurat",
+    ]);
+    const berubah = Object.keys(data).filter((k) => !JEJAK_PII.has(k));
+    const nilaiSebelum: Record<string, unknown> = {};
+    const nilaiSesudah: Record<string, unknown> = {};
+    for (const k of berubah) {
+      nilaiSebelum[k] = (existing as unknown as Record<string, unknown>)[k] ?? null;
+      nilaiSesudah[k] = data[k] ?? null;
+    }
+    // Tandai PII yang berubah tanpa menyimpan isinya.
+    const piiBerubah = Object.keys(data).filter((k) => JEJAK_PII.has(k));
+
+    const storeBerpindah =
+      "storeId" in data && (data.storeId ?? null) !== (existing.storeId ?? null);
+    const alasan = typeof body.alasan === "string" ? body.alasan.trim() : null;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const hasil = await tx.user.update({
+        where: { id },
+        data,
+        select: {
+          id: true,
+          kode: true,
+          nama: true,
+          role: true,
+          status: true,
+          storeId: true,
+          tanggalMasuk: true,
+          bolehAbsenTanpaShift: true,
+        },
+      });
+
+      // Audit log — wajib untuk perubahan master data (spesifikasi §8:415).
+      if (berubah.length > 0 || piiBerubah.length > 0) {
+        await tx.auditLog.create({
+          data: {
+            tabel: "User",
+            recordId: id,
+            aksi: "UPDATE",
+            nilaiSebelum: { id, ...nilaiSebelum },
+            nilaiSesudah: {
+              id,
+              ...nilaiSesudah,
+              ...(piiBerubah.length > 0
+                ? { _piiDiubah: piiBerubah }
+                : {}),
+            },
+            actorId: session.user.id,
+            alasan,
+          },
+        });
+      }
+
+      // Riwayat penempatan — Karyawan yang pindah toko tidak boleh dihapus
+      // (§8:416): histori harus tetap utuh supaya data gaji/absensi/laporan
+      // untuk toko lama bisa ditelusuri. Tabel ini sudah ada di skema tapi
+      // tadinya HANYA ditulis dari seed — tidak ada satupun penulisan dari API.
+      if (storeBerpindah) {
+        const keTokoId = (data.storeId as string | null) ?? null;
+        if (keTokoId) {
+          await tx.riwayatPenempatan.create({
+            data: {
+              employeeId: id,
+              dariTokoId: existing.storeId ?? null,
+              keTokoId,
+              alasan,
+            },
+          });
+        }
+      }
+
+      return hasil;
     });
 
     return NextResponse.json({
@@ -238,6 +351,7 @@ export async function PATCH(
       tanggalMasuk: updated.tanggalMasuk
         ? updated.tanggalMasuk.toISOString()
         : null,
+      bolehAbsenTanpaShift: updated.bolehAbsenTanpaShift,
     });
   } catch (err) {
     console.error("PATCH /api/user/[id] error:", err);

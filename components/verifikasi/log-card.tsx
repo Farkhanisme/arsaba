@@ -7,8 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+import { formatWaktuWIB, mapsUrl } from "@/lib/absensi";
 
 type LogData = {
   id: string;
@@ -25,7 +24,7 @@ type LogData = {
   isOverride: boolean;
 };
 
-type JadwalAcuan = {
+type ShiftAcuan = {
   segmen: "NORMAL" | "PAM";
   jamMulai: string;
   jamSelesai: string;
@@ -34,24 +33,25 @@ type JadwalAcuan = {
 type Props = {
   attendanceId: string;
   log: LogData;
-  jadwalAcuan?: JadwalAcuan[];
+  shiftAcuan?: ShiftAcuan | null;
+  // Saran dari server (toleransi 5 menit dikurangi). Admin tetap menginput
+  // final; null berarti tidak ada shift acuan sehingga isi manual.
+  saranMenitTelat?: number | null;
+  // Nilai isPam yang tersimpan di server. WAJIB diteruskan supaya checkbox
+  // ter-initialize benar — kalau tidak, approve ulang akan mereset true→false.
+  isPamAwal?: boolean;
 };
 
-function formatWaktuWIB(iso: string | null): string {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  const wib = new Date(d.getTime() + WIB_OFFSET_MS);
-  const yyyy = wib.getUTCFullYear();
-  const mm = String(wib.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(wib.getUTCDate()).padStart(2, "0");
-  const hh = String(wib.getUTCHours()).padStart(2, "0");
-  const mi = String(wib.getUTCMinutes()).padStart(2, "0");
-  return `${dd}/${mm}/${yyyy} ${hh}:${mi} WIB`;
-}
-
-export function LogCard({ attendanceId, log, jadwalAcuan = [] }: Props) {
+export function LogCard({
+  attendanceId,
+  log,
+  shiftAcuan = null,
+  saranMenitTelat = null,
+  isPamAwal = false,
+}: Props) {
   const router = useRouter();
   const bagian = log.jenis === "MASUK" ? "masuk" : "keluar";
+  const isMasuk = log.jenis === "MASUK";
 
   // Optimistic state — sinkron dari props saat server refresh selesai
   const [status, setStatus] = useState(log.status);
@@ -60,8 +60,13 @@ export function LogCard({ attendanceId, log, jadwalAcuan = [] }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [mode, setMode] = useState<"idle" | "reject">("idle");
   const [reason, setReason] = useState("");
-  const [menitTelat, setMenitTelat] = useState("0");
-  const [isPam, setIsPam] = useState(false);
+  // Pre-fill dengan saran sistem; admin bebas mengubahnya.
+  const [menitTelat, setMenitTelat] = useState(
+    saranMenitTelat !== null && saranMenitTelat !== undefined ? String(saranMenitTelat) : ""
+  );
+  // Di-initialize dari nilai server, BUKAN hardcode false — kalau tidak,
+  // approve ulang akan mereset penanda PAM yang sudah tersimpan.
+  const [isPam, setIsPam] = useState(isPamAwal);
 
   const kirim = useCallback(
     async (action: "approve" | "reject", reasonText?: string) => {
@@ -73,8 +78,8 @@ export function LogCard({ attendanceId, log, jadwalAcuan = [] }: Props) {
           body: JSON.stringify({
             bagian,
             action,
-            ...(bagian === "masuk" && action === "approve"
-              ? { menitTelat: Number(menitTelat), isPam }
+            ...(isMasuk && action === "approve"
+              ? { menitTelat: Number(menitTelat || 0), isPam }
               : {}),
             ...(action === "reject" ? { reason: reasonText } : {}),
           }),
@@ -91,8 +96,6 @@ export function LogCard({ attendanceId, log, jadwalAcuan = [] }: Props) {
         setOptimisticVerifiedBy("Anda (baru saja)");
         setMode("idle");
         setReason("");
-        setMenitTelat("0");
-        setIsPam(false);
         toast.success(
           action === "approve"
             ? `Absen ${bagian} disetujui.`
@@ -106,12 +109,13 @@ export function LogCard({ attendanceId, log, jadwalAcuan = [] }: Props) {
         setIsSubmitting(false);
       }
     },
-    [attendanceId, bagian, router, menitTelat, isPam]
+    [attendanceId, bagian, router, menitTelat, isPam, isMasuk]
   );
 
   const judul = log.jenis === "MASUK" ? "Absen Masuk" : "Absen Keluar";
   const verifiedByName = optimisticVerifiedBy ?? log.verifiedByName;
   const verifiedAtLabel = optimisticVerifiedBy ? "baru saja" : formatWaktuWIB(log.verifiedAt);
+  const adaLokasi = log.latitude !== null && log.longitude !== null;
 
   return (
     <Card>
@@ -125,11 +129,28 @@ export function LogCard({ attendanceId, log, jadwalAcuan = [] }: Props) {
         <p>Waktu server: {formatWaktuWIB(log.absenServerPada)}</p>
         <p>
           Lokasi:{" "}
-          {log.latitude !== null && log.longitude !== null
-            ? `${log.latitude.toFixed(6)}, ${log.longitude.toFixed(6)}`
+          {adaLokasi
+            ? `${log.latitude!.toFixed(6)}, ${log.longitude!.toFixed(6)}`
             : "tidak tersedia"}
         </p>
-        {log.keteranganKoreksi && <p>Keterangan koreksi: {log.keteranganKoreksi}</p>}
+        {adaLokasi && (
+          <p>
+            <a
+              href={mapsUrl(log.latitude!, log.longitude!)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-4"
+            >
+              Lihat di Google Maps
+            </a>
+          </p>
+        )}
+        {log.keteranganKoreksi && (
+          <p className="font-medium text-amber-600 dark:text-amber-400">
+            Foto koreksi — foto ini diambil setelah penolakan, BUKAN saat check-in.
+            Alasan karyawan: {log.keteranganKoreksi}
+          </p>
+        )}
         {rejectedReason && <p className="text-destructive">Alasan ditolak: {rejectedReason}</p>}
         {verifiedByName && (
           <p>
@@ -148,26 +169,31 @@ export function LogCard({ attendanceId, log, jadwalAcuan = [] }: Props) {
           <p className="text-muted-foreground">Tidak ada foto.</p>
         )}
 
-        {log.jenis === "MASUK" && status === "PENDING_VERIFIKASI" && mode === "idle" && (
+        {isMasuk && status === "PENDING_VERIFIKASI" && mode === "idle" && (
           <div className="mt-3 space-y-3 border-t pt-3">
-            {jadwalAcuan.length > 0 && (
+            {shiftAcuan ? (
               <div className="rounded-md bg-muted p-3 text-xs">
-                <p className="font-semibold">Jadwal acuan:</p>
-                <ul className="mt-1 space-y-0.5">
-                  {jadwalAcuan.map((j, i) => (
-                    <li key={i}>
-                      {j.segmen}: {formatWaktuWIB(j.jamMulai)} – {formatWaktuWIB(j.jamSelesai)}
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-1 text-muted-foreground">
-                  Bandingkan dengan waktu absen masuk di atas untuk menentukan menit telat.
+                <p className="font-semibold">Jadwal acuan ({shiftAcuan.segmen}):</p>
+                <p className="mt-1">
+                  {formatWaktuWIB(shiftAcuan.jamMulai)} – {formatWaktuWIB(shiftAcuan.jamSelesai)}
                 </p>
+                <p className="mt-1 text-muted-foreground">
+                  Bandingkan dengan waktu absen masuk di atas.
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-md bg-muted p-3 text-xs text-muted-foreground">
+                Tidak ada jadwal shift acuan — isi menit telat manual.
               </div>
             )}
 
             <div className="space-y-1">
-              <Label htmlFor={`menit-telat-${log.id}`}>Menit telat (0 jika tidak telat)</Label>
+              <Label htmlFor={`menit-telat-${log.id}`}>
+                Menit telat
+                {saranMenitTelat !== null && saranMenitTelat !== undefined
+                  ? ` (saran sistem: ${saranMenitTelat} menit)`
+                  : ""}
+              </Label>
               <Input
                 id={`menit-telat-${log.id}`}
                 type="number"
@@ -178,6 +204,9 @@ export function LogCard({ attendanceId, log, jadwalAcuan = [] }: Props) {
                 onChange={(e) => setMenitTelat(e.target.value)}
                 disabled={isSubmitting}
               />
+              <p className="text-xs text-muted-foreground">
+                Saran sudah memperhitungkan toleransi 5 menit. Bisa diubah.
+              </p>
             </div>
 
             <label className="flex items-center gap-2 text-sm">
@@ -198,8 +227,8 @@ export function LogCard({ attendanceId, log, jadwalAcuan = [] }: Props) {
               type="button"
               disabled={isSubmitting}
               onClick={() => {
-                if (bagian === "masuk") {
-                  const n = Number(menitTelat);
+                if (isMasuk) {
+                  const n = Number(menitTelat || 0);
                   if (!Number.isInteger(n) || n < 0 || n > 1440) {
                     toast.error("Menit telat harus angka bulat 0–1440.");
                     return;

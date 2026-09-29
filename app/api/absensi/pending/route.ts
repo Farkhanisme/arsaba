@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { findShiftAcuanBatch, saranMenitTelat } from "@/lib/absensi";
 import { NextRequest, NextResponse } from "next/server";
 
 const ALLOWED_ROLES = ["SUPERVISOR", "ADMIN", "MANAJER"];
@@ -9,6 +10,7 @@ const MAX_LIMIT = 200;
 // GET /api/absensi/pending
 // Query: ?storeId=xxx&limit=50
 // List absensi dengan statusMasuk atau statusKeluar = PENDING_VERIFIKASI.
+// Satu batch query untuk shift acuan (bukan N+1 per item).
 export async function GET(request: NextRequest) {
   try {
     const session = await auth();
@@ -68,63 +70,61 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    const result = await Promise.all(
-      items.map(async (att) => {
-        const jadwal = await prisma.shiftAssignment.findMany({
-          where: {
-            employeeId: att.employeeId,
-            shiftInstance: {
-              tanggal: att.tanggalShift,
-              statusJadwal: "APPROVED",
-            },
-          },
-          select: {
-            segmen: true,
-            jamMulai: true,
-            jamSelesai: true,
-          },
-        });
-
-        const logMasuk = att.logs.find((l) => l.jenis === "MASUK") ?? null;
-        const logKeluar = att.logs.find((l) => l.jenis === "KELUAR") ?? null;
-
-        return {
-          id: att.id,
-          employeeNama: att.employee.nama,
-          storeNama: att.store.nama,
-          tanggalShift: att.tanggalShift.toISOString().slice(0, 10),
-          absenMasuk: att.absenMasuk.toISOString(),
-          absenKeluar: att.absenKeluar ? att.absenKeluar.toISOString() : null,
-          statusMasuk: att.statusMasuk,
-          statusKeluar: att.statusKeluar,
-          menitTelat: att.menitTelat,
-          potongan: att.potongan,
-          isPam: att.isPam,
-          autoClosed: att.autoClosed,
-          logMasuk: logMasuk
-            ? {
-                fotoFileId: logMasuk.fotoFileId,
-                latitude: logMasuk.latitude,
-                longitude: logMasuk.longitude,
-                absenServerPada: logMasuk.absenServerPada.toISOString(),
-              }
-            : null,
-          logKeluar: logKeluar
-            ? {
-                fotoFileId: logKeluar.fotoFileId,
-                latitude: logKeluar.latitude,
-                longitude: logKeluar.longitude,
-                absenServerPada: logKeluar.absenServerPada.toISOString(),
-              }
-            : null,
-          jadwalAcuan: jadwal.map((j) => ({
-            segmen: j.segmen,
-            jamMulai: j.jamMulai.toISOString(),
-            jamSelesai: j.jamSelesai.toISOString(),
-          })),
-        };
-      })
+    // Shift acuan untuk SEMUA item dalam satu query (sebelumnya 1 query per item).
+    const shiftMap = await findShiftAcuanBatch(
+      items.map((att) => ({ employeeId: att.employeeId, ref: att.absenMasuk }))
     );
+
+    const result = items.map((att) => {
+      const shift = shiftMap.get(att.employeeId) ?? null;
+
+      const logMasuk = att.logs.find((l) => l.jenis === "MASUK") ?? null;
+      const logKeluar = att.logs.find((l) => l.jenis === "KELUAR") ?? null;
+
+      return {
+        id: att.id,
+        employeeNama: att.employee.nama,
+        storeNama: att.store?.nama ?? "Tanpa Toko",
+        tanggalShift: att.tanggalShift.toISOString().slice(0, 10),
+        absenMasuk: att.absenMasuk.toISOString(),
+        absenKeluar: att.absenKeluar ? att.absenKeluar.toISOString() : null,
+        statusMasuk: att.statusMasuk,
+        statusKeluar: att.statusKeluar,
+        menitTelat: att.menitTelat,
+        potongan: att.potongan,
+        isPam: att.isPam,
+        autoClosed: att.autoClosed,
+        logMasuk: logMasuk
+          ? {
+              fotoFileId: logMasuk.fotoFileId,
+              latitude: logMasuk.latitude,
+              longitude: logMasuk.longitude,
+              absenServerPada: logMasuk.absenServerPada.toISOString(),
+            }
+          : null,
+        logKeluar: logKeluar
+          ? {
+              fotoFileId: logKeluar.fotoFileId,
+              latitude: logKeluar.latitude,
+              longitude: logKeluar.longitude,
+              absenServerPada: logKeluar.absenServerPada.toISOString(),
+            }
+          : null,
+        shiftAcuan: shift
+          ? {
+              segmen: shift.segmen,
+              jamMulai: shift.jamMulai.toISOString(),
+              jamSelesai: shift.jamSelesai.toISOString(),
+            }
+          : null,
+        // Saran server untuk form verifikasi — admin tetap yang menginput
+        // menitTelat final. Null = tidak ada shift acuan.
+        saranMenitTelat: saranMenitTelat(
+          att.absenMasuk,
+          shift?.jamMulai ?? null
+        ),
+      };
+    });
 
     return NextResponse.json({
       total: result.length,

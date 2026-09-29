@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { uploadToTelegram } from "@/lib/telegram";
 import { NextRequest, NextResponse } from "next/server";
 
+const ALLOWED_CHECKIN_ROLES = ["KARYAWAN", "KEPALA_TOKO", "SUPERVISOR", "ADMIN"];
+
 // POST /api/absensi/resubmit — ABSEN ULANG untuk absen MASUK yang DITOLAK.
 // absenMasuk TIDAK berubah (timestamp asli). Hanya foto dan fotoMasukDiambilPada
 // yang di-update. Log lama tetap tersimpan sebagai riwayat audit.
@@ -11,6 +13,13 @@ export async function POST(request: NextRequest) {
     const session = await auth();
     if (!session?.user) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    }
+
+    if (!ALLOWED_CHECKIN_ROLES.includes(session.user.role)) {
+      return NextResponse.json(
+        { error: "Role Anda tidak melakukan absensi." },
+        { status: 403 }
+      );
     }
 
     const formData = await request.formData();

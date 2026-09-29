@@ -14,11 +14,19 @@ type Props = {
   initial: {
     tipePerhitunganGaji: TipePerhitunganGaji | null;
     tarifPerJam: number | null;
+    tarifPerHari: number | null;
     nominalGajiPokok: number | null;
   };
 };
 
 const TIPE_OPTIONS: TipePerhitunganGaji[] = ["HARIAN", "BULANAN", "JAM"];
+
+/** Field tarif wajib per tipe — cerminan `validasiTarif` di lib/gaji.ts. */
+const TARIF_WAJIB: Record<TipePerhitunganGaji, string> = {
+  HARIAN: "Tarif harian",
+  BULANAN: "Gaji pokok bulanan",
+  JAM: "Tarif per jam",
+};
 
 export function GajiForm({ userId, initial }: Props) {
   const router = useRouter();
@@ -27,6 +35,9 @@ export function GajiForm({ userId, initial }: Props) {
   );
   const [tarifPerJam, setTarifPerJam] = useState(
     initial.tarifPerJam !== null ? String(initial.tarifPerJam) : ""
+  );
+  const [tarifPerHari, setTarifPerHari] = useState(
+    initial.tarifPerHari !== null ? String(initial.tarifPerHari) : ""
   );
   const [nominalGajiPokok, setNominalGajiPokok] = useState(
     initial.nominalGajiPokok !== null ? String(initial.nominalGajiPokok) : ""
@@ -38,8 +49,13 @@ export function GajiForm({ userId, initial }: Props) {
       toast.error("Pilih tipe perhitungan gaji.");
       return;
     }
-    if (tipe === "JAM" && tarifPerJam.trim() === "") {
-      toast.error("Tipe JAM wajib mengisi tarif per jam.");
+
+    // Setiap tipe punya tarif wajibnya sendiri (lihat lib/gaji.ts).
+    const wajib = TARIF_WAJIB[tipe as TipePerhitunganGaji];
+    const nilaiWajib =
+      tipe === "JAM" ? tarifPerJam : tipe === "HARIAN" ? tarifPerHari : nominalGajiPokok;
+    if (nilaiWajib.trim() === "") {
+      toast.error(`Tipe ${tipe} wajib mengisi ${wajib.toLowerCase()}.`);
       return;
     }
 
@@ -47,21 +63,26 @@ export function GajiForm({ userId, initial }: Props) {
       tipePerhitunganGaji: tipe,
     };
 
-    if (tipe === "JAM") {
-      const v = Number(tarifPerJam);
-      if (!Number.isInteger(v) || v < 0) {
-        toast.error("Tarif per jam harus angka bulat >= 0.");
-        return;
+    const cekAngka = (v: string, nama: string): number | null => {
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 0) {
+        toast.error(`${nama} harus angka bulat >= 0.`);
+        return null;
       }
-      body.tarifPerJam = v;
-    }
+      return n;
+    };
 
-    if (nominalGajiPokok.trim() !== "") {
-      const v = Number(nominalGajiPokok);
-      if (!Number.isInteger(v) || v < 0) {
-        toast.error("Gaji pokok harus angka bulat >= 0.");
-        return;
-      }
+    if (tipe === "JAM") {
+      const v = cekAngka(tarifPerJam, "Tarif per jam");
+      if (v === null) return;
+      body.tarifPerJam = v;
+    } else if (tipe === "HARIAN") {
+      const v = cekAngka(tarifPerHari, "Tarif harian");
+      if (v === null) return;
+      body.tarifPerHari = v;
+    } else {
+      const v = cekAngka(nominalGajiPokok, "Gaji pokok bulanan");
+      if (v === null) return;
       body.nominalGajiPokok = v;
     }
 
@@ -109,7 +130,7 @@ export function GajiForm({ userId, initial }: Props) {
 
       {tipe === "JAM" && (
         <div className="space-y-1">
-          <Label htmlFor={`tarif-${userId}`}>Tarif per jam (Rp)</Label>
+          <Label htmlFor={`tarif-${userId}`}>Tarif per jam (Rp) — wajib</Label>
           <Input
             id={`tarif-${userId}`}
             type="text"
@@ -119,23 +140,61 @@ export function GajiForm({ userId, initial }: Props) {
             onChange={(e) => setTarifPerJam(e.target.value)}
             disabled={isSubmitting}
           />
+          {initial.tarifPerJam !== null && (
+            <p className="text-xs text-muted-foreground">
+              Saat ini: Rp {initial.tarifPerJam.toLocaleString("id-ID")}
+            </p>
+          )}
         </div>
       )}
 
-      <div className="space-y-1">
-        <Label htmlFor={`pokok-${userId}`}>
-          Gaji pokok (Rp) — opsional, biarkan kosong jika tidak diubah
-        </Label>
-        <Input
-          id={`pokok-${userId}`}
-          type="text"
-          inputMode="numeric"
-          placeholder="Contoh: 2500000"
-          value={nominalGajiPokok}
-          onChange={(e) => setNominalGajiPokok(e.target.value)}
-          disabled={isSubmitting}
-        />
-      </div>
+      {tipe === "HARIAN" && (
+        <div className="space-y-1">
+          <Label htmlFor={`tarifHari-${userId}`}>Tarif harian (Rp) — wajib</Label>
+          <Input
+            id={`tarifHari-${userId}`}
+            type="text"
+            inputMode="numeric"
+            placeholder="Contoh: 120000"
+            value={tarifPerHari}
+            onChange={(e) => setTarifPerHari(e.target.value)}
+            disabled={isSubmitting}
+          />
+          <p className="text-xs text-muted-foreground">
+            Gaji pokok = tarif ini × jumlah hari kerja terverifikasi. Tarif harian
+            tidak diturunkan dari tarif per jam karena jam kerja berbeda per toko.
+          </p>
+          {initial.tarifPerHari !== null && (
+            <p className="text-xs text-muted-foreground">
+              Saat ini: Rp {initial.tarifPerHari.toLocaleString("id-ID")}
+            </p>
+          )}
+        </div>
+      )}
+
+      {tipe === "BULANAN" && (
+        <div className="space-y-1">
+          <Label htmlFor={`pokok-${userId}`}>Gaji pokok per bulan (Rp) — wajib</Label>
+          <Input
+            id={`pokok-${userId}`}
+            type="text"
+            inputMode="numeric"
+            placeholder="Contoh: 2500000"
+            value={nominalGajiPokok}
+            onChange={(e) => setNominalGajiPokok(e.target.value)}
+            disabled={isSubmitting}
+          />
+          <p className="text-xs text-muted-foreground">
+            Nominal tetap bulanan, tidak bergantung hari hadir. Izin dan
+            ketidakhadiran tidak mengurangi nominal ini.
+          </p>
+          {initial.nominalGajiPokok !== null && (
+            <p className="text-xs text-muted-foreground">
+              Saat ini: Rp {initial.nominalGajiPokok.toLocaleString("id-ID")}
+            </p>
+          )}
+        </div>
+      )}
 
       <Button type="button" onClick={submit} disabled={isSubmitting}>
         {isSubmitting ? "Menyimpan..." : "Simpan Gaji"}

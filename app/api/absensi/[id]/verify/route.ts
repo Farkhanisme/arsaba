@@ -1,9 +1,9 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { hitungPotongan } from "@/lib/absensi";
 import { NextRequest, NextResponse } from "next/server";
 
 const ALLOWED_ROLES = ["SUPERVISOR", "ADMIN", "MANAJER"];
-const POTONGAN_PER_MENIT = 1000;
 const MENIT_TELAT_MAX = 1440;
 
 type Body = {
@@ -70,7 +70,9 @@ export async function PATCH(
     }
 
     let menitTelat = 0;
-    let isPam = false;
+    // Kalau body tidak mengirim isPam, pertahankan nilai yang sudah tersimpan
+    // (alur reject → resubmit → approve tidak boleh menghapus penanda PAM).
+    let isPam: boolean | undefined = undefined;
 
     if (bagian === "masuk" && action === "approve") {
       if (
@@ -188,10 +190,15 @@ export async function PATCH(
       });
 
       if (bagian === "masuk" && action === "approve") {
-        const potongan = menitTelat * POTONGAN_PER_MENIT;
+        // Server yang menghitung `potongan` agar tidak bisa dimanipulasi client.
+        const potongan = hitungPotongan(menitTelat);
         updatedAttendance = await tx.attendance.update({
           where: { id },
-          data: { menitTelat, potongan, isPam },
+          data: {
+            menitTelat,
+            potongan,
+            ...(isPam !== undefined ? { isPam } : {}),
+          },
         });
       }
 

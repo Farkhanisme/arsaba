@@ -26,7 +26,15 @@ function menuUntukRole(role: Role): MenuItem[] {
 
   if (role === "KARYAWAN" || role === "KEPALA_TOKO") {
     items.push({ href: "/absensi", label: "Absensi" });
+    items.push({ href: "/absensi/riwayat", label: "Riwayat Absensi" });
     items.push({ href: "/agenda", label: "Agenda" });
+  }
+
+  // Supervisor & Admin juga melakukan absensi (bisa tanpa toko) — Manajer &
+  // Direktur tidak.
+  if (role === "SUPERVISOR" || role === "ADMIN") {
+    items.push({ href: "/absensi", label: "Absensi" });
+    items.push({ href: "/absensi/riwayat", label: "Riwayat Absensi" });
   }
 
   if (role === "KEPALA_TOKO") {

@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { hitungBaseGaji, jamTerbayarDariMenit, menitEfektif } from "@/lib/gaji";
 import { NextRequest, NextResponse } from "next/server";
 import type { Role } from "@prisma/client";
 
@@ -45,23 +46,10 @@ export async function GET(request: NextRequest) {
     const awalBulan = new Date(Date.UTC(year, month - 1, 1));
     const akhirBulan = new Date(Date.UTC(year, month, 1));
 
-    // Helper: hitung baseGaji
-    function hitungBaseGaji(
-      tipe: string | null,
-      tarifPerJam: number | null,
-      gajiPokokNominal: number,
-      totalHariKerja: number,
-      totalMenitKerja: number
-    ): number {
-      if (tipe === "HARIAN") {
-        return (tarifPerJam ?? 0) * 8 * totalHariKerja;
-      } else if (tipe === "BULANAN") {
-        return gajiPokokNominal;
-      } else if (tipe === "JAM") {
-        return (tarifPerJam ?? 0) * Math.floor(totalMenitKerja / 60);
-      }
-      return 0;
-    }
+    // Rumus baseGaji TIDAK ditulis ulang di sini — memakai helper yang sama
+    // dengan /api/payroll/generate (lib/gaji.ts). Sebelumnya file ini punya
+    // salinan sendiri yang bisa berbeda diam-diam, sehingga "estimasi" di
+    // dashboard tidak lagi sama dengan payslip yang dibayarkan.
 
     if (CROSS_STORE_ROLES.includes(userRole)) {
       // ==================== CROSS-STORE VIEW (Direktur/Manajer/Admin/Supervisor) ====================
@@ -78,6 +66,7 @@ export async function GET(request: NextRequest) {
           role: true,
           tipePerhitunganGaji: true,
           tarifPerJam: true,
+          tarifPerHari: true,
           storeId: true,
           store: { select: { id: true, nama: true } },
           gajiPokok: { select: { nominal: true } },
@@ -98,34 +87,55 @@ export async function GET(request: NextRequest) {
 
       const employeeIds = karyawanList.map((k) => k.id);
 
-      // 1. Attendance agregat per karyawan.
-      // totalHariKerja = jumlah tanggalShift unik (DIVERIFIKASI).
-      // Segmen PAM ganda di hari yang sama tetap dihitung 1 hari;
-      // totalMenitKerja & potongan tetap di-SUM dari semua segmen.
-      const attendanceAgg = await prisma.attendance.groupBy({
-        by: ["employeeId", "tanggalShift"],
+      // 1. Attendance agregat per karyawan — PER RECORD, bukan groupBy.
+      //
+      //    Alasan sama seperti di /api/payroll/generate: `groupBy` menjumlahkan
+      //    baris sehingga koreksi manual pada kasus PAM 2 segmen ikut ter-total
+      //    (480 + 300 menjadi 480) dan jamnya salah. Lihat komentar lengkap di sana.
+      const attendanceRows = await prisma.attendance.findMany({
         where: {
           employeeId: { in: employeeIds },
           tanggalShift: { gte: awalBulan, lt: akhirBulan },
           statusMasuk: "DIVERIFIKASI",
         },
-        _sum: { totalMenitKerja: true, potongan: true },
+        select: {
+          employeeId: true,
+          tanggalShift: true,
+          totalMenitKerja: true,
+          totalMenitManual: true,
+          potongan: true,
+        },
       });
 
       const attendanceMap = new Map<
         string,
-        { totalHariKerja: number; totalMenitKerja: number; totalPotonganTelat: number }
+        {
+          hariUnik: Set<string>;
+          totalMenitKerja: number;
+          totalJamTerbayar: number;
+          totalPotonganTelat: number;
+        }
       >();
-      for (const a of attendanceAgg) {
-        const cur = attendanceMap.get(a.employeeId) ?? {
-          totalHariKerja: 0,
-          totalMenitKerja: 0,
-          totalPotonganTelat: 0,
-        };
-        cur.totalHariKerja += 1;
-        cur.totalMenitKerja += a._sum.totalMenitKerja ?? 0;
-        cur.totalPotonganTelat += a._sum.potongan ?? 0;
-        attendanceMap.set(a.employeeId, cur);
+      for (const a of attendanceRows) {
+        let cur = attendanceMap.get(a.employeeId);
+        if (!cur) {
+          cur = {
+            hariUnik: new Set<string>(),
+            totalMenitKerja: 0,
+            totalJamTerbayar: 0,
+            totalPotonganTelat: 0,
+          };
+          attendanceMap.set(a.employeeId, cur);
+        }
+        cur.hariUnik.add(a.tanggalShift.toISOString().slice(0, 10));
+        cur.totalMenitKerja += a.totalMenitKerja;
+        cur.totalJamTerbayar += jamTerbayarDariMenit(
+          menitEfektif({
+            totalMenitKerja: a.totalMenitKerja,
+            totalMenitManual: a.totalMenitManual,
+          })
+        );
+        cur.totalPotonganTelat += a.potongan;
       }
 
       // 2. Agenda agregat per karyawan
@@ -157,20 +167,22 @@ export async function GET(request: NextRequest) {
 
       for (const karyawan of karyawanList) {
         const att = attendanceMap.get(karyawan.id) ?? {
-          totalHariKerja: 0,
+          hariUnik: new Set<string>(),
           totalMenitKerja: 0,
+          totalJamTerbayar: 0,
           totalPotonganTelat: 0,
         };
         const totalBonusAgenda = agendaMap.get(karyawan.id) ?? 0;
         const gajiPokokNominal = karyawan.gajiPokok?.nominal ?? 0;
 
-        const baseGaji = hitungBaseGaji(
-          karyawan.tipePerhitunganGaji,
-          karyawan.tarifPerJam,
+        const baseGaji = hitungBaseGaji({
+          tipe: karyawan.tipePerhitunganGaji!,
+          tarifPerJam: karyawan.tarifPerJam,
+          tarifPerHari: karyawan.tarifPerHari,
           gajiPokokNominal,
-          att.totalHariKerja,
-          att.totalMenitKerja
-        );
+          totalHariKerja: att.hariUnik.size,
+          totalJamTerbayar: att.totalJamTerbayar,
+        });
 
         const estimasiGaji = baseGaji + totalBonusAgenda - att.totalPotonganTelat;
         totalEstimasiPayroll += estimasiGaji;
@@ -197,7 +209,7 @@ export async function GET(request: NextRequest) {
           nama: karyawan.nama,
           tipePerhitunganGaji: karyawan.tipePerhitunganGaji,
           baseGaji,
-          totalHariKerja: att.totalHariKerja,
+          totalHariKerja: att.hariUnik.size,
           totalMenitKerja: att.totalMenitKerja,
           totalBonusAgenda,
           totalPotonganTelat: att.totalPotonganTelat,
@@ -226,6 +238,7 @@ export async function GET(request: NextRequest) {
           role: true,
           tipePerhitunganGaji: true,
           tarifPerJam: true,
+          tarifPerHari: true,
           storeId: true,
           store: { select: { id: true, nama: true } },
           gajiPokok: { select: { nominal: true } },
@@ -246,25 +259,44 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      // Attendance: totalHariKerja = jumlah tanggalShift unik (DIVERIFIKASI).
-      // Segmen PAM ganda di hari yang sama tetap dihitung 1 hari.
-      const attendanceAgg = await prisma.attendance.groupBy({
-        by: ["employeeId", "tanggalShift"],
+      // Attendance PER RECORD (bukan groupBy) — sama seperti payroll, supaya
+      // estimasi dashboard tidak menyimpang dari payslip. GroupBy menjumlahkan
+      // baris sehingga koreksi manual pada kasus PAM 2 segmen ikut ter-total.
+      const attendanceRows = await prisma.attendance.findMany({
         where: {
           employeeId: userId,
           tanggalShift: { gte: awalBulan, lt: akhirBulan },
           statusMasuk: "DIVERIFIKASI",
         },
-        _sum: { totalMenitKerja: true, potongan: true },
+        select: {
+          tanggalShift: true,
+          totalMenitKerja: true,
+          totalMenitManual: true,
+          potongan: true,
+        },
       });
 
-      const totalHariKerja = attendanceAgg.length;
-      const totalMenitKerja = attendanceAgg.reduce(
-        (sum, a) => sum + (a._sum.totalMenitKerja ?? 0),
+      const totalHariKerja = new Set(
+        attendanceRows.map((a) => a.tanggalShift.toISOString().slice(0, 10))
+      ).size;
+      const totalMenitKerja = attendanceRows.reduce(
+        (sum, a) => sum + a.totalMenitKerja,
         0
       );
-      const totalPotonganTelat = attendanceAgg.reduce(
-        (sum, a) => sum + (a._sum.potongan ?? 0),
+      // Floor per record (segmen) lalu dijumlah — identik dengan payroll.
+      const totalJamTerbayar = attendanceRows.reduce(
+        (sum, a) =>
+          sum +
+          jamTerbayarDariMenit(
+            menitEfektif({
+              totalMenitKerja: a.totalMenitKerja,
+              totalMenitManual: a.totalMenitManual,
+            })
+          ),
+        0
+      );
+      const totalPotonganTelat = attendanceRows.reduce(
+        (sum, a) => sum + a.potongan,
         0
       );
 
@@ -283,13 +315,14 @@ export async function GET(request: NextRequest) {
       const totalBonusAgenda = agendaAgg[0]?._sum.nominal ?? 0;
       const gajiPokokNominal = karyawan.gajiPokok?.nominal ?? 0;
 
-      const baseGaji = hitungBaseGaji(
-        karyawan.tipePerhitunganGaji,
-        karyawan.tarifPerJam,
+      const baseGaji = hitungBaseGaji({
+        tipe: karyawan.tipePerhitunganGaji,
+        tarifPerJam: karyawan.tarifPerJam,
+        tarifPerHari: karyawan.tarifPerHari,
         gajiPokokNominal,
         totalHariKerja,
-        totalMenitKerja
-      );
+        totalJamTerbayar,
+      });
 
       const estimasiGaji = baseGaji + totalBonusAgenda - totalPotonganTelat;
 
@@ -306,6 +339,7 @@ export async function GET(request: NextRequest) {
           baseGaji,
           totalHariKerja,
           totalMenitKerja,
+          totalJamTerbayar,
           totalBonusAgenda,
           totalPotonganTelat,
           estimasiGaji,

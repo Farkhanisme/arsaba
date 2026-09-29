@@ -1,7 +1,10 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { uploadToTelegram } from "@/lib/telegram";
+import { hitungTotalMenitKerja } from "@/lib/absensi";
 import { NextRequest, NextResponse } from "next/server";
+
+const ALLOWED_CHECKIN_ROLES = ["KARYAWAN", "KEPALA_TOKO", "SUPERVISOR", "ADMIN"];
 
 // POST /api/absensi/checkout — CHECK-OUT.
 export async function POST(request: NextRequest) {
@@ -9,6 +12,13 @@ export async function POST(request: NextRequest) {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    }
+
+    if (!ALLOWED_CHECKIN_ROLES.includes(session.user.role)) {
+      return NextResponse.json(
+        { error: "Role Anda tidak melakukan absensi." },
+        { status: 403 }
+      );
     }
 
     const formData = await request.formData();
@@ -41,10 +51,7 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date();
-    const totalMenitKerja = Math.max(
-      0,
-      Math.floor((now.getTime() - existing.absenMasuk.getTime()) / 60000)
-    );
+    const totalMenitKerja = hitungTotalMenitKerja(existing.absenMasuk, now);
 
     const arrayBuffer = await foto.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);

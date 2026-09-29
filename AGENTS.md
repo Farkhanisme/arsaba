@@ -37,17 +37,41 @@
 ## RBAC & Security
 
 - **Never** rely on UI-only role display. Every API route must validate the user's role from session/JWT.
-- **Sensitive PII** (NIK, tempat/tanggal lahir, alamat, kontak_darurat): restrict read/edit to **Admin** and **Manajer** only. Other roles (Supervisor, Kepala Toko, Karyawan) should see name, toko, role only.
-- **Audit log** is mandatory for: salary changes, manual bonuses/penalties, verification outcomes (who approved/rejected + when + reason), master data changes (stores, business modules).
-- **Data deletion**: Never hard-delete employees. Use status (`aktif`/`resign`/`nonaktif`) + `riwayat_penempatan` table for history. Gaji, absensi, laporan must remain intact for old stores.
+- **Hierarki role** (dikonfirmasi pemilik proyek): `DIREKTUR > MANAJER > SUPERVISOR > ADMIN > KEPALA_TOKO > KARYAWAN`. Hanya role dengan rank lebih tinggi boleh menetapkan role orang lain — **kecuali** `MANAJER` ↔ `DIREKTUR` saling boleh (organisasi ini hanya punya 1 Manajer dan 1 Direktur). Implementasi: `RANK` + `PENGECUALIAN` + `bolehSetRole()` di `lib/rbac.ts`.
+- **Selalu cek self-patch** di route yang mengubah user: `if (id === session.user.id) return 400`. Tanpa ini Supervisor bisa menaikkan role-nya sendiri jadi Manajer. `reset-password` dan `[id]/gaji` sudah punya guard ini — `PATCH /api/user/[id]` wajib ikut.
+- **Sensitive PII** (NIK, tempat/tanggal lahir, alamat, kontak_darurat): read/edit untuk **Admin, Supervisor, dan Manajer**. `KEPALA_TOKO` & `KARYAWAN` hanya melihat nama, toko, role. (Keputusan pemilik proyek — jangan memperketat tanpa keputusan baru; Supervisor adalah operator lapangan yang butuh akses ini.)
+- **Audit log** is mandatory for: salary changes, manual bonuses/penalties, verification outcomes (who approved/rejected + when + reason), master data changes (stores, business modules), **`nominal` bonus agenda**, dan **koreksi jam manual**.
+- **Data deletion**: Never hard-delete employees. Use status (`aktif`/`resign`/`nonaktif`) + `riwayat_penempatan` table for history. Gaji, absensi, laporan must remain intact for old stores. **Setiap perubahan `storeId` wajib menulis baris `RiwayatPenempatan`** (skema sudah ada; jangan andalkan seed).
 
 ## Attendance (Absensi)
 
-- Employees clock in via **photo + geolokasi** sent to Telegram bot.
-- **Tolerance**: 5 menit from shift start. After that: **Rp1.000 per minute penalty**.
-- Penalty formula: `menit_telat = max(0, absen_waktu - shift_mulai - 5 menit); potongan = menit_telat × 1000`.
-- Geolocation is **informational only** for verifier — do not block absen based on distance.
-- Bot stores `file_id` (not temporary URLs). When displaying photo in dashboard, call Telegram `getFile` with stored `file_id` each time — do not cache the temporary link.
+- Check-in/out lewat **form web aplikasi** (bukan bot Telegram): kamera + geolokasi opsional -> foto di-forward ke Telegram sebagai storage, simpan `file_id`.
+- **Role check ditegakkan di API**: `KARYAWAN`, `KEPALA_TOKO`, `SUPERVISOR`, `ADMIN` boleh absen. `MANAJER` & `DIREKTUR` tidak. Jangan andalkan guard UI saja.
+- `Attendance.storeId` **nullable** -- Supervisor/Admin boleh absen tanpa toko. Kehadiran dihitung dari `tanggalShift` unik, **tidak terikat toko** (lensa fisik / `hariHadirFisik` sudah dihapus).
+- `tanggalShift` diambil dari `jamMulai` shift APPROVED yang mencakup waktu check-in (jendela 4 jam sebelum `jamMulai` s/d `jamSelesai`). Check-in 02.00 Senin untuk shift Minggu 18.00-06.00 -> **terhitung hari Minggu**. Tanpa shift -> fallback tanggal kalender WIB.
+- **Gate tanpa shift**: check-in ditolak 403 kecuali `User.bolehAbsenTanpaShift = true` (default `false`, checkbox di Master Karyawan).
+- **Tolerance 5 menit** -- server menghitung **saran** `max(0, menit_telat - 5)` yang di-pre-fill di form verifikasi; admin tetap menginput angka final. `potongan = menitTelat x 1000` dihitung server.
+- **Auto-close (>20 jam) mengisi `absenKeluar`** dengan `jamSelesai` shift (fallback `absenMasuk`) + `statusKeluar = DIVERIFIKASI` -- bukan `now` -- supaya `totalMenitKerja` tidak melebihi jadwal (penting untuk gaji tipe `JAM`) dan karyawan bisa langsung check-in lagi.
+- Geolocation **informational only** -- lat/long mentah + link Google Maps, jangan hitung jarak.
+- **Semua helper waktu-WIB & pencocokan shift ada di `lib/absensi.ts`.** Jangan duplikasi `WIB_OFFSET_MS` di page/komponen -- pakai `formatWaktuWIB` / `formatTanggalWIB` / `findShiftAcuan` / `findShiftAcuanBatch` / `saranMenitTelat` / `hitungPotongan` / `hitungTotalMenitKerja` / `hitungAbsenKeluarAutoClose`.
+- Bot stores `file_id` (not temporary URLs). `/api/telegram/file/[fileId]` **wajib otorisasi**: pemilik record (karyawan/pengirim) atau role `SUPERVISOR/ADMIN/MANAJER`.
+- **Regression test absensi** (3 script, semua pakai `--env-file=.env`):
+  - `scripts/uji-absensi.ts` -- 34 assert, **tanpa server**: konversi WIB, toleransi 5 menit, `findShiftAcuan` (termasuk shift malam lintas tengah malam), atribusi `tanggalShift`, auto-close, gate `bolehAbsenTanpaShift`. Residu 0.
+  - `scripts/uji-absensi-http.ts` -- 26 assert, **butuh `npm run dev` jalan di terminal lain**: guard RBAC check-in per role, gate shift 403, anti-IDOR `/riwayat`, otorisasi foto Telegram, `isPam` tidak ke-reset, verifikasi-absensi-sendiri 403.
+  - `scripts/uji-laporan-kehadiran.ts` -- 29 assert, laporan kehadiran incl. grup "Tanpa Toko".
+  - `scripts/uji-penyetoran-uang.ts` -- 39 assert, penyetoran uang (§4.5) incl. race terima-vs-batal.
+  - `scripts/uji-gaji.ts` -- 36 assert, perhitungan gaji (`lib/gaji.ts`): rumus 3 tipe, floor per hari, validasi tarif wajib, normalisasi field, dan regresi P0-1 (HARIAN tidak boleh memakai `tarifPerJam`). Residu 0.
+  - `scripts/uji-gaji-http.ts` -- 19 assert, **butuh `npm run dev`**: `PATCH /api/user/[id]/gaji` end-to-end — tarif wajib per tipe ditolak 400, nilai tak valid ditolak, audit log tertulis, dan RBAC (KARYAWAN 403 walau body-nya valid).
+  - `scripts/uji-rbac-http.ts` -- 33 assert, **butuh `npm run dev`**: matriks `bolehSetRole`, hierarki ditegakkan server, guard self-patch, AuditLog, `RiwayatPenempatan` saat mutasi toko, dan PII tidak bocor ke audit log.
+  - `scripts/uji-agenda-http.ts` -- 30 assert, **butuh `npm run dev`**: nominal agenda hanya untuk status `DIVERIFIKASI`, audit per perubahan (dengan `nilaiSebelum`), guard payroll `LOCKED` -> 409 tanpa mengubah data, propagate template hanya ke turunan terverifikasi, dan `nominal-batch` preview-vs-commit.
+  - `scripts/uji-jam-http.ts` -- 27 assert, **butuh `npm run dev`**: koreksi jam manual §7.1a — ditolak untuk tipe `HARIAN`/`BULANAN` (400), `totalMenitKerja` asli tidak pernah berubah, batas 0-1440 menit, `alasan` min 5 karakter, audit per koreksi + pembatalan (`totalMenitManual: null`), payroll `LOCKED` -> 409 tanpa mengubah data, `floor` per hari (6 × 470 menit = 42 jam, bukan 47), dan **regresi perangkap PAM** (2 segmen di 1 tanggal: koreksi berlaku per record -> 13 jam, bukan 8 jam; dan `totalHariKerja` tetap 1).
+  - `scripts/uji-payroll-http.ts` -- 45 assert, **butuh `npm run dev`**: mekanisme revisi §7.1b (alasan wajib, hanya untuk `LOCKED`, `revisiKe` naik, `AuditLog` `aksi: "REVISI"`, `PATCH` tetap 403 saat `LOCKED`), re-sync `DRAFT` (angka ikut ter-update, field input manual **tidak** ditimpa), `LOCKED` di-skip + laporkan `selisihTotal`, dan regresi halaman payslip benar-benar merender data (bukan "Payroll tidak ditemukan").
+  - `scripts/uji-promoql.ts` -- `npm run uji:promoql`, **butuh `npm run dev`**: memanggil 92 endpoint untuk mencari `PrismaClientValidationError` (field Prisma salah ketik). Lihat P0-6.
+- **Login di skrip uji HTTP wajib dua tahap** (Auth.js v5): `GET /api/auth/csrf` dulu, baru POST `/api/auth/callback/credentials` dengan `csrfToken` + cookie yang sama. Tanpa itu server balas `?error=MissingCSRF`. Gunakan helper `login()` dari `scripts/http-test.ts` (sudah ada retry) -- jangan menyalin ulang ritualnya.
+- **Neon pooler free-tier sering drop koneksi (P1001)** -- kalau muncul `Can't reach database server`, tunggu 15-20 detik lalu ulangi. Jangan diduga sebagai bug kode. Di route yang butuh beberapa query (mis. `/api/telegram/file/[fileId]`), pakai query **sequential + short-circuit**, bukan `Promise.all`.
+- **Skrip regresi WAJIB pakai retry.** Semua skrip di `scripts/` membungkus PrismaClient dengan `dbClient()` dari `scripts/db-retry.ts` (retry + backoff hanya untuk error transient: P1001/P1008/ECONNRESET/dll — BUKAN P2002/P2025 yang itu bug logika) dan memanggil `await tungguDB(prismaRaw)` sebelum bikin data. Connection drop bisa terjadi di tengah skrip, bukan cuma di awal; tanpa retry suite gagal palsu dan cleanup terlipat sehingga meninggalkan residue. Contoh: `const prisma = dbClient(prismaRaw);`.
+- **Cleanup harus di `finally`.** Sisa data uji di DB jauh lebih merepotkan daripada test yang gagal. `uji-absensi.ts` punya `bersihkan()` yang dipanggil dari blok `finally` + pesan SQL manual kalau gagal.
+- **Residu harus dicek DUA cara**: (1) berdasarkan `id` yang skrip buat -- memastikan yang dihapus hilang, dan (2) berdasarkan **pola nama/kode** (`startsWith`) -- memastikan tidak ada orphan yang terpisah dari daftar id (mis. create yang gagal separuh jalan). Hanya (1) pernah dipakai dan skrip tetap melaporkan "residu 0" padahal 10 record uji tertinggal. Baseline DB saat ini: 13 user + 4 store + 9 payroll.
 
 ## Shifts (Shift)
 
@@ -60,9 +84,10 @@
 
 - Triggered when an employee takes leave on a given store.
 - Admin/Supervisor assigns backup from **other stores**.
-- **PAM rule**: Only stores with **>3 registered employees** can auto-display PAM options. Stores with ≤3 do not show automatic PAM (no fair cadastre without emptying original store).
-- **Override**: Admin/Supervisor can force PAM for ≤3-employee stores. This override **must be recorded** in audit log (who, which store, optional reason).
-- **Gaji/jam PAM**: Recorded in the **employee's original store**, not the helper store. Important for per-store performance reports.
+- **PAM gate = `Store.pamEnabled`** (default `true`) — Admin can turn PAM off per store via UI. Ini **menggantikan** aturan ">3 karyawan" yang ada di versi spec sebelumnya; **jangan** mengimplementasikan ulang ambang jumlah karyawan. Saat toggle diubah, `AuditLog` wajib ditulis (nilai sebelum & sesudah `pamEnabled`).
+- **Tidak ada kaitan otomatis izin → PAM.** Menandai izin di `Izin` tidak membuat atau menyarankan siapa yang backup. Admin/Supervisor yang menyusun jadwal penugasan. Ini gap yang diketahui (§12.3), bukan bug.
+- **Gaji & kehadiran: global, bukan per toko.** `Payroll` tidak punya kolom store sama sekali. Kehadiran dihitung dari `tanggalShift` unik **tanpa filter toko**, jadi PAM di toko lain tetap terhitung keberangkatan. Lihat §5.3 & §7.1 di spesifikasi.
+- **PAM jadi 2 segmen** (contoh: 07:00–12:00 dan 17:00–22:00) → **2 record `Attendance`**, masing-masing `totalMenitKerja` sendiri, tapi tetap **1 hari kerja** untuk `totalHariKerja`. `Attendance.isPam` diisi Manual/Supervisor saat verifikasi; `ShiftAssignment.segmen = "PAM"` hanya acuan menyusun jadwal.
 
 ## Agenda & Bonus (Agenda & Bonus)
 
@@ -75,12 +100,19 @@
 ## Payroll & Gaji (Gaji & Payroll)
 
 - **Gaji pokok** set by pusat (Manajer), not per store. Can differ per individual employee.
-- **Calculation type** per employee: `HARIAN` (rate × actual days) or `BULANAN` (fixed base, adjusted with potongan/tambahan).
-- Field `tipe_perhitungan_gaji` (enum `HARIAN`/`BULANAN`) is **required** on employee data.
+- **Tiga tipe perhitungan** (field `tipe_perhitungan_gaji` wajib ada di data karyawan):
+  - `HARIAN` → `User.tarifPerHari × totalHariKerja`. **Rumus memakai tarif harian, bukan `tarifPerJam × 8`** — jam kerja beda per toko, jadi konstanta 8 tidak universal.
+  - `JAM` → `User.tarifPerJam × jam_terbayar`, dengan `floor` **per hari** lalu dijumlah (§7.1a). Koreksi manual per hari disimpan di `Attendance.totalMenitManual`; `totalMenitKerja` asli tidak pernah diubah.
+  - **JANGAN pakai `prisma.attendance.groupBy` untuk menghitung jam di payroll / estimasi dashboard.** `groupBy` menjumlahkan baris, jadi pada kasus PAM 2 segmen hasil koreksi manual ikut ter-total dan menit segmen lain hilang (480 + 300 menjadi 480 → 8 jam, seharusnya 13 jam). Ambil **per record** (`findMany`) lalu agregasi di JS: `Set` berisi `tanggalShift` untuk `totalHariKerja` (2 segmen = 1 hari) dan jumlahkan `jamTerbayarDariMenit(menitEfektif(record))` per record. Pola yang benar ada di `app/api/payroll/generate/route.ts` + `app/api/dashboard/gaji/route.ts` — keduanya harus identik.
+  - `BULANAN` → `GajiPokok.nominal` tetap. **`GajiPokok.nominal` hanya dipakai tipe `BULANAN`** — jangan kirim field itu untuk tipe lain.
+- **Jangan null-kan field tarif secara diam-diam.** Setiap field yang tidak relevan untuk tipe aktif dinormalkan ke `null`, dan field yang relevan **wajib** diisi (HARIAN wajib `tarifPerHari`, JAM wajib `tarifPerJam`, BULANAN wajib `nominalGajiPokok`) — kalau tidak, `baseGaji` diam-diam jadi 0.
+- **Hanya kehadiran terverifikasi yang dibayar.** Hari izin & hari tanpa keterangan tidak menambah `totalHariKerja`/`totalMenitKerja` → tidak dibayar untuk `HARIAN` dan `JAM`; `BULANAN` tidak terpengaruh. **Tidak ada lembur** di model ini.
 - **Bonuses**: Every completed & verified agenda adds its nominal to gaji. Manual bonuses/potongan by Manajer are recommended by system but final decision rests with Manajer before payroll is locked.
 - **Sales performance bonus**: **Not calculated automatically** from sales data (confirmed by project owner). Provide a free-form nominal field + keterangan opsional in monthly payroll form, filled by Manajer based on personal assessment.
-- **Payroll lock**: Once locked by Manajer, data may not be changed directly. Create a "revisi" mechanism with audit trail instead.
-- **Estimasi gaji dashboard**: Real-time from absensi, verified agenda, and recorded potongan. Label clearly as "estimasi" — final amount may change with manual bonus/potongan.
+- **Payroll lock**: Sekali `LOCKED`, **tidak ada jalur edit langsung** (PATCH biasa tetap 403). Koreksi lewat **unlock dengan audit** (§7.1b): `POST /api/payroll/[id]/revise` dengan `alasan` wajib → status kembali `DRAFT`, `revisiKe` naik, `AuditLog` `aksi: "REVISI"`. `PATCH`/`generate` lalu bisa dipakai dan dikunci lagi.
+- **Re-sync payroll**: `POST /api/payroll/generate` untuk payroll `DRAFT` yang sudah ada harus **menghitung ulang** angka otomatis (hari kerja, bonus agenda, potongan telat, total) tapi **tidak boleh menimpa** field input manual (`bonusManual`, `potonganManual`, `bonusPerforma`, `keteranganBonusPerforma`). Tanpa ini, agenda yang diverifikasi setelah generate hilang senyap.
+- **Estimasi gaji dashboard**: Real-time from absensi, verified agenda, and recorded potongan. Label clearly as "estimasi" — final amount may change with manual bonus/potongan. **Rumus harus identik dengan `payroll/generate`** — pakai helper bersama, jangan tulis ulang (drift = estimasi ≠ payslip).
+- **JANGAN panggil API sendiri dari Server Component pakai `fetch("/api/...")`.** Fetch relatif tidak punya base URL di Server Component Next.js, jadi request-nya tidak pernah sampai ke route. Kalau dibungkus `try { ... } catch {}` (pola lama di `manajer/payroll/[id]/page.tsx`), error-nya ditelan dan halamannya **selalu** jatuh ke state "tidak ditemukan" tanpa satu pun error di log. Di Server Component, query Prisma langsung; kalau bentuk datanya dipakai juga oleh API route, taruh mapper-nya di `lib/payroll-view.ts` (`petakanPayroll`) supaya keduanya tidak berbeda bentuk. `manajer/agenda/nominal/page.tsx` aman hanya karena file itu `"use client"`.
 
 ## Google Sheets Export
 
@@ -119,8 +151,11 @@
 ## Quick Test Shortcuts
 
 - If adding a new store shift pattern: verify the system supports **weekday vs weekend differentiation** (BGM Dieng pattern) before assuming a simple 7-day repeat.
-- If verifying attendance penalty: test the formula with exactly 5 min late (should be Rp0), 6 min late (Rp1000), 11 min late (Rp6000).
-- If checking PAM auto-enable: test with exactly 3 employees (should NOT auto-show PAM) vs 4 employees (should auto-show).
+- If verifying attendance penalty: test the formula with exactly 5 min late (should be Rp0), 6 min late (Rp1000), 11 min late (Rp6000). Saran server sudah memperhitungkan toleransi 5 menit — `scripts/uji-absensi.ts` mengunci angka-angka ini.
+- If verifying shift lintas tengah malam: check-in 02.00 Senin untuk shift Minggu 18.00-06.00 harus terhitung `tanggalShift` = Minggu (bukan Senin).
+- If checking PAM: yang diuji adalah `Store.pamEnabled` (true = boleh, false = route assignment menolak dengan 400), **bukan** ambang jumlah karyawan. Aturan ">3 karyawan" sudah dihapus dari spesifikasi.
+- If verifying perhitungan gaji tipe `JAM`: `floor` diterapkan **per hari** lalu dijumlah, bukan atas total menit sebulan — 6 hari × 470 menit = 42 jam, bukan 47. Koreksi manual per hari ada di §7.1a dan hanya berlaku saat payroll belum LOCKED.
+- If verifying tipe `HARIAN`: hari izin dan hari tanpa keterangan **tidak dibayar** (tidak menambah `totalHariKerja`). Ini disengaja, bukan bug — lihat §7.1.
 
 ## Prisma — Migration & Format
 

@@ -6,13 +6,17 @@ import { prisma } from "@/lib/prisma";
 // Definisi (nilai turunan, bukan record):
 // - jadwalHari    = tanggal unik ShiftAssignment pada ShiftInstance APPROVED.
 // - hariHadir     = tanggalShift unik Attendance statusMasuk DIVERIFIKASI
-//                   (tanpa filter toko fisik — PAM di toko lain tetap "berangkat").
+//                   (tanpa filter toko — PAM di toko lain tetap "berangkat").
 // - hariIzin      = tanggal Izin pada hari jadwal toko tsb yang TIDAK punya
 //                   attendance terverifikasi (hadir menang atas izin;
 //                   izin di hari tanpa jadwal tidak dihitung).
 // - tanpaKeterangan = max(0, jadwal - hadir - izin).
 // - diLuarJadwal  = max(0, hadir - jadwal).
-// - hadirFisik    = tanggalShift unik DIVERIFIKASI dengan storeId = toko tsb.
+//
+// CATATAN: tidak ada lagi "lensa fisik" / hadirFisik. Kehadiran TIDAK terikat
+// toko — `Attendance.storeId` nullable hanya untuk jejak administratif, dan
+// tidak memengaruhi perhitungan kehadiran. Karyawan tanpa toko (Supervisor/
+// Admin) dikelompokkan di grup "Tanpa Toko" di paling bawah.
 
 export type LaporanKaryawan = {
   employeeId: string;
@@ -25,7 +29,6 @@ export type LaporanKaryawan = {
   hariIzin: number;
   hariTanpaKeterangan: number;
   hariDiLuarJadwal: number;
-  hariHadirFisik: number;
   persentaseKehadiran: number | null;
 };
 
@@ -50,6 +53,21 @@ export type LaporanKehadiran = {
 
 function tanggalKey(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+// Grup sentinel untuk karyawan tanpa toko (User.storeId = null). Bukan id Store
+// sungguhan — hanya pembeda di loop per-"toko" supaya Supervisor/Admin punya
+// tempat tampil di laporan.
+const TANPA_TOKO_ID = "__TANPA_TOKO__";
+const TANPA_TOKO = { id: TANPA_TOKO_ID, nama: "Tanpa Toko" };
+
+function isTokoTanpaToko(id: string): boolean {
+  return id === TANPA_TOKO_ID;
+}
+
+// Grup "Tanpa Toko" hanya muncul kalau tidak ada filter toko tertentu.
+function tokoTampilTanpaToko(tokoFilter: string | null): boolean {
+  return tokoFilter === null;
 }
 
 function persen(hadir: number, jadwal: number): number | null {
@@ -90,6 +108,7 @@ export async function getLaporanKehadiran(args: {
   });
 
   // 2. Kehadiran terverifikasi: 1 baris = 1 (employee, tanggal) unik.
+  //    Sengaja tanpa filter storeId — kehadiran tidak terikat toko.
   const hadirRows = await prisma.attendance.groupBy({
     by: ["employeeId", "tanggalShift"],
     where: {
@@ -99,18 +118,7 @@ export async function getLaporanKehadiran(args: {
     _count: { id: true },
   });
 
-  // 3. Kehadiran fisik per toko (lensa fisik, termasuk PAM).
-  const fisikRows = await prisma.attendance.groupBy({
-    by: ["storeId", "employeeId", "tanggalShift"],
-    where: {
-      tanggalShift: { gte: awalBulan, lt: akhirBulan },
-      statusMasuk: "DIVERIFIKASI",
-      ...(tokoFilter ? { storeId: tokoFilter } : {}),
-    },
-    _count: { id: true },
-  });
-
-  // 4. Izin pada bulan berjalan.
+  // 3. Izin pada bulan berjalan.
   const izinRows = await prisma.izin.findMany({
     where: { tanggal: { gte: awalBulan, lt: akhirBulan } },
     select: { employeeId: true, tanggal: true },
@@ -143,21 +151,6 @@ export async function getLaporanKehadiran(args: {
     set.add(tanggalKey(r.tanggalShift));
   }
 
-  const fisikMap = new Map<string, Map<string, Set<string>>>(); // storeId -> employeeId -> Set<tanggal>
-  for (const r of fisikRows) {
-    let byEmp = fisikMap.get(r.storeId);
-    if (!byEmp) {
-      byEmp = new Map();
-      fisikMap.set(r.storeId, byEmp);
-    }
-    let set = byEmp.get(r.employeeId);
-    if (!set) {
-      set = new Set();
-      byEmp.set(r.employeeId, set);
-    }
-    set.add(tanggalKey(r.tanggalShift));
-  }
-
   const izinMap = new Map<string, Set<string>>();
   for (const r of izinRows) {
     let set = izinMap.get(r.employeeId);
@@ -174,6 +167,14 @@ export async function getLaporanKehadiran(args: {
   for (const byEmp of jadwalMap.values()) {
     for (const eid of byEmp.keys()) baselineIds.add(eid);
   }
+  // Karyawan tanpa toko (Supervisor/Admin, `User.storeId` null) ikut diambil
+  // supaya mereka bisa tampil di grup "Tanpa Toko".
+  const tanpaToko = tokoTampilTanpaToko(tokoFilter)
+    ? await prisma.user.findMany({
+        where: { storeId: null, status: "AKTIF" },
+        select: { id: true },
+      })
+    : [];
   const terdaftar =
     storeIds.length > 0
       ? await prisma.user.findMany({
@@ -184,6 +185,7 @@ export async function getLaporanKehadiran(args: {
   const needIds = new Set<string>([
     ...baselineIds,
     ...terdaftar.map((u) => u.id),
+    ...tanpaToko.map((u) => u.id),
   ]);
   const users =
     needIds.size > 0
@@ -201,14 +203,16 @@ export async function getLaporanKehadiran(args: {
       : [];
   const userMap = new Map(users.map((u) => [u.id, u]));
 
-  // 6. Bangun payload per toko.
+  // 6. Bangun payload per toko + grup "Tanpa Toko" di paling bawah.
   const stores: LaporanStore[] = [];
-  for (const toko of tokoTampil) {
+  for (const toko of [...tokoTampil, ...(tokoTampilTanpaToko(tokoFilter) ? [TANPA_TOKO] : [])]) {
     const byEmpJadwal = jadwalMap.get(toko.id) ?? new Map<string, Set<string>>();
-    const byEmpFisik = fisikMap.get(toko.id) ?? new Map<string, Set<string>>();
     const ids = new Set<string>([...byEmpJadwal.keys()]);
     for (const u of users) {
-      if (u.storeId === toko.id && u.status === "AKTIF") ids.add(u.id);
+      if (u.status !== "AKTIF") continue;
+      if (isTokoTanpaToko(toko.id) ? u.storeId === null : u.storeId === toko.id) {
+        ids.add(u.id);
+      }
     }
 
     const karyawan: LaporanKaryawan[] = [];
@@ -227,7 +231,6 @@ export async function getLaporanKehadiran(args: {
       }
       const hariTanpaKeterangan = Math.max(0, jadwalHari - hariHadir - hariIzin);
       const hariDiLuarJadwal = Math.max(0, hariHadir - jadwalHari);
-      const hariHadirFisik = byEmpFisik.get(eid)?.size ?? 0;
 
       karyawan.push({
         employeeId: eid,
@@ -240,7 +243,6 @@ export async function getLaporanKehadiran(args: {
         hariIzin,
         hariTanpaKeterangan,
         hariDiLuarJadwal,
-        hariHadirFisik,
         persentaseKehadiran: persen(hariHadir, jadwalHari),
       });
     }
@@ -300,7 +302,6 @@ export type StatusHarian = "HADIR" | "IZIN" | "TIDAK_HADIR" | "DILUAR_JADWAL";
 export type RincianHarian = {
   tanggal: string; // YYYY-MM-DD
   status: StatusHarian;
-  storeFisikNama: string | null;
   isPam: boolean;
   menitTelat: number;
   potongan: number;
@@ -360,7 +361,6 @@ export async function getRincianKehadiran(args: {
       menitTelat: true,
       potongan: true,
       absenMasuk: true,
-      store: { select: { nama: true } },
     },
     orderBy: { absenMasuk: "asc" },
   });
@@ -391,7 +391,6 @@ export async function getRincianKehadiran(args: {
       return {
         tanggal: t,
         status: (jadwalSet.has(t) ? "HADIR" : "DILUAR_JADWAL") as StatusHarian,
-        storeFisikNama: hadir.store.nama,
         isPam: hadir.isPam,
         menitTelat: hadir.menitTelat,
         potongan: hadir.potongan,
@@ -402,7 +401,6 @@ export async function getRincianKehadiran(args: {
     return {
       tanggal: t,
       status: (alasan !== null ? "IZIN" : "TIDAK_HADIR") as StatusHarian,
-      storeFisikNama: null,
       isPam: false,
       menitTelat: 0,
       potongan: 0,

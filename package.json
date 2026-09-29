@@ -4,11 +4,22 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run uji:absensi && npm run uji:laporan",
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "uji:absensi": "tsx --env-file=.env scripts/uji-absensi.ts",
+    "uji:absensi:http": "tsx --env-file=.env scripts/uji-absensi-http.ts",
+    "uji:laporan": "tsx --env-file=.env scripts/uji-laporan-kehadiran.ts",
+    "uji:setoran": "tsx --env-file=.env scripts/uji-penyetoran-uang.ts",
+    "uji:gaji": "tsx --env-file=.env scripts/uji-gaji.ts",
+    "uji:gaji:http": "tsx --env-file=.env scripts/uji-gaji-http.ts",
+    "uji:rbac:http": "tsx --env-file=.env scripts/uji-rbac-http.ts",
+    "uji:agenda:http": "tsx --env-file=.env scripts/uji-agenda-http.ts",
+    "uji:payroll:http": "tsx --env-file=.env scripts/uji-payroll-http.ts",
+    "uji:jam:http": "tsx --env-file=.env scripts/uji-jam-http.ts",
+    "uji:promoql": "tsx --env-file=.env scripts/uji-promoql.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

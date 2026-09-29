@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { hitungBaseGaji, jamTerbayarDariMenit, menitEfektif } from "@/lib/gaji";
 import { NextRequest, NextResponse } from "next/server";
 
 const ALLOWED_ROLES = ["MANAJER"];
@@ -22,7 +23,13 @@ interface PayrollItemResult {
   keteranganBonusPerforma: string | null;
   totalGaji: number;
   status: string;
-  action: "created" | "skipped";
+  /** "created" = baru; "updated" = re-sync DRAFT; "skipped" = sudah LOCKED. */
+  action: "created" | "updated" | "skipped";
+  /** true kalau payroll LOCKED tapi angka terkini berbeda -> perlu direvisi. */
+  perluRevisi: boolean;
+  selisihBonus: number;
+  selisihPotongan: number;
+  selisihTotal: number;
 }
 
 export async function POST(request: NextRequest) {
@@ -100,6 +107,7 @@ export async function POST(request: NextRequest) {
         nama: true,
         tipePerhitunganGaji: true,
         tarifPerJam: true,
+        tarifPerHari: true,
         gajiPokok: { select: { nominal: true } },
       },
     });
@@ -117,33 +125,74 @@ export async function POST(request: NextRequest) {
     // Pre-fetch data untuk perhitungan batch
     const employeeIds = karyawanList.map((k) => k.id);
 
-    // 1. Attendance: totalHariKerja (jumlah tanggalShift unik DIVERIFIKASI) dan totalMenitKerja (SUM).
-    // Segmen PAM ganda di hari yang sama tetap dihitung 1 hari.
-    const attendanceAgg = await prisma.attendance.groupBy({
-      by: ["employeeId", "tanggalShift"],
+    // 1. Attendance agregat per karyawan.
+    //
+    //    Sengaja TIDAK pakai `groupBy` untuk bagian jam, karena `groupBy`
+    //    menjumlahkan baris dan menghilangkan identitas record. Untuk kasus PAM
+    //    (2 segmen pada tanggal yang sama) itu merusak koreksi manual:
+    //
+    //      segmen A dikoreksi 300 -> 480, segmen B tetap 300
+    //      groupBy  : SUM(totalMenitManual) = 480  -> floor(480/60)  =  8 jam  ❌
+    //      per-record: 480 + 300 = 780            -> floor(780/60)  = 13 jam  ✅
+    //
+    //    `_sum` juga tidak bisa_fee nullable-per-record: `SUM` kolom yang null
+    //    mengabaikan baris itu, sehingga "hanya A yang dikoreksi" tidak bisa
+    //    dibedakan dari "semua segmen dikoreksi". Karena itu diambil per record
+    //    lalu digabung di JS.
+    //
+    //    Perilaku yang dihasilkan:
+    //      totalHariKerja   = jumlah tanggalShift UNIK
+    //      totalJamTerbayar = SUM floor(menitEfektif per record)  -> floor per
+    //                         SEGMENT, bukan per tanggal. Untuk kasus umum
+    //                         (1 segmen per hari) identik dengan "per hari".
+    //      totalPotonganTelat = SUM potongan
+    const attendanceRows = await prisma.attendance.findMany({
       where: {
         employeeId: { in: employeeIds },
         tanggalShift: { gte: awalBulan, lt: akhirBulan },
         statusMasuk: "DIVERIFIKASI",
       },
-      _sum: { totalMenitKerja: true, potongan: true },
+      select: {
+        employeeId: true,
+        tanggalShift: true,
+        totalMenitKerja: true,
+        totalMenitManual: true,
+        potongan: true,
+      },
     });
 
     // Map attendance data
     const attendanceMap = new Map<
       string,
-      { totalHariKerja: number; totalMenitKerja: number; totalPotonganTelat: number }
+      {
+        hariUnik: Set<string>;
+        totalMenitKerja: number;
+        totalJamTerbayar: number;
+        totalPotonganTelat: number;
+      }
     >();
-    for (const a of attendanceAgg) {
-      const cur = attendanceMap.get(a.employeeId) ?? {
-        totalHariKerja: 0,
-        totalMenitKerja: 0,
-        totalPotonganTelat: 0,
-      };
-      cur.totalHariKerja += 1;
-      cur.totalMenitKerja += a._sum.totalMenitKerja ?? 0;
-      cur.totalPotonganTelat += a._sum.potongan ?? 0;
-      attendanceMap.set(a.employeeId, cur);
+    for (const a of attendanceRows) {
+      let cur = attendanceMap.get(a.employeeId);
+      if (!cur) {
+        cur = {
+          hariUnik: new Set<string>(),
+          totalMenitKerja: 0,
+          totalJamTerbayar: 0,
+          totalPotonganTelat: 0,
+        };
+        attendanceMap.set(a.employeeId, cur);
+      }
+      // Set = tanggal unik, jadi 2 segmen di hari yang sama tetap 1 hari.
+      cur.hariUnik.add(a.tanggalShift.toISOString().slice(0, 10));
+      cur.totalMenitKerja += a.totalMenitKerja;
+      // Floor per record (segmen). Untuk 1 segmen/hari sama dengan per hari.
+      cur.totalJamTerbayar += jamTerbayarDariMenit(
+        menitEfektif({
+          totalMenitKerja: a.totalMenitKerja,
+          totalMenitManual: a.totalMenitManual,
+        })
+      );
+      cur.totalPotonganTelat += a.potongan;
     }
 
     // 2. Agenda: totalBonusAgenda (SUM nominal where status = DIVERIFIKASI, targetEmployeeId, diselesaikanPada di bulan)
@@ -186,7 +235,19 @@ export async function POST(request: NextRequest) {
       }> = [];
 
       for (const karyawan of karyawanList) {
-        // Cek apakah payroll sudah ada untuk periode ini
+        // Payroll yang sudah ada untuk periode ini.
+        //
+        // Tiga kemungkinan:
+        //   - belum ada          -> buat baru ("created")
+        //   - sudah ada & DRAFT  -> hitung ULANG angka otomatis ("updated")
+        //   - sudah ada & LOCKED -> jangan sentuh ("skipped"), tapi laporkan
+        //                          berapa angka yang tertinggal supaya Manajer
+        //                          tahu harus merevisi (§7.1b).
+        //
+        // Kenapa DRAFT boleh di-update: Dulu route ini selalu skip, sehingga
+        // agenda yang diverifikasi SETELAH generate tidak pernah masuk gaji —
+        // bonus hilang senyap tanpa warning. Perhitungan ulang TIDAK BOLEH
+        // menimpa field input manual (bonusManual, potonganManual, bonusPerforma).
         const existing = await tx.payroll.findUnique({
           where: {
             employeeId_periode: {
@@ -196,60 +257,41 @@ export async function POST(request: NextRequest) {
           },
         });
 
-        if (existing) {
-          results.push({
-            employeeId: karyawan.id,
-            employeeKode: karyawan.kode,
-            employeeNama: karyawan.nama,
-            gajiPokok: existing.gajiPokok,
-            totalHariKerja: existing.totalHariKerja,
-            totalBonusAgenda: existing.totalBonusAgenda,
-            totalPotonganTelat: existing.totalPotonganTelat,
-            bonusManual: existing.bonusManual,
-            potonganManual: existing.potonganManual,
-            bonusPerforma: existing.bonusPerforma,
-            keteranganBonusPerforma: existing.keteranganBonusPerforma,
-            totalGaji: existing.totalGaji,
-            status: existing.status,
-            action: "skipped",
-          });
-          continue;
-        }
-
-        // Ambil data agregat
         const att = attendanceMap.get(karyawan.id) ?? {
-          totalHariKerja: 0,
+          hariUnik: new Set<string>(),
           totalMenitKerja: 0,
+          totalJamTerbayar: 0,
           totalPotonganTelat: 0,
         };
         const totalBonusAgenda = agendaMap.get(karyawan.id) ?? 0;
         const gajiPokokNominal = karyawan.gajiPokok?.nominal ?? 0;
 
-        // Hitung baseGaji berdasarkan tipePerhitunganGaji
-        let baseGaji = 0;
+        // baseGaji dihitung oleh helper bersama (lib/gaji.ts) supaya rumus
+        // payroll ini identik dengan estimasi di /api/dashboard/gaji.
+        //
+        // PENTING §7.1a: untuk tipe JAM, `floor` diterapkan PER HARI lalu
+        // dijumlah — bukan atas total menit sebulan. Pembulatan per hari
+        // dilakukan saat agregasi (lihat attendanceMap di atas).
         const tipe = karyawan.tipePerhitunganGaji!;
+        const baseGaji = hitungBaseGaji({
+          tipe,
+          tarifPerJam: karyawan.tarifPerJam,
+          tarifPerHari: karyawan.tarifPerHari,
+          gajiPokokNominal,
+          totalHariKerja: att.hariUnik.size,
+          totalJamTerbayar: att.totalJamTerbayar,
+        });
 
-        if (tipe === "HARIAN") {
-          // tarifPerJam × 8 × totalHariKerja
-          const tarif = karyawan.tarifPerJam ?? 0;
-          baseGaji = tarif * 8 * att.totalHariKerja;
-        } else if (tipe === "BULANAN") {
-          // gajiPokok dari tabel GajiPokok
-          baseGaji = gajiPokokNominal;
-        } else if (tipe === "JAM") {
-          // tarifPerJam × floor(totalMenitKerja / 60)
-          const tarif = karyawan.tarifPerJam ?? 0;
-          const jamKerja = Math.floor(att.totalMenitKerja / 60);
-          baseGaji = tarif * jamKerja;
-        }
+        // Komponen input manual: 0 untuk payroll BARU. Untuk payroll yang sudah
+        // ada, NILAI LAMA yang dipakai lagi — bukan 0. Kalau di sini tetap 0,
+        // `totalGaji` hasil re-sync akan tidak sama dengan penjumlahan field yang
+        // tampil di payslip (bonusManual + bonusPerforma diabaikan), sehingga
+        // payslip jadi tidak konsisten dengan komponennya sendiri.
+        const bonusManual = existing?.bonusManual ?? 0;
+        const potonganManual = existing?.potonganManual ?? 0;
+        const bonusPerforma = existing?.bonusPerforma ?? 0;
+        const keteranganBonusPerforma = existing?.keteranganBonusPerforma ?? null;
 
-        // Komponen manual & performa = 0 saat generate awal
-        const bonusManual = 0;
-        const potonganManual = 0;
-        const bonusPerforma = 0;
-        const keteranganBonusPerforma = null;
-
-        // Total gaji
         const totalGaji =
           baseGaji +
           totalBonusAgenda +
@@ -258,13 +300,103 @@ export async function POST(request: NextRequest) {
           att.totalPotonganTelat -
           potonganManual;
 
+        const totalHariKerjaFinal = tipe === "HARIAN" ? att.hariUnik.size : null;
+
+        if (existing) {
+          if (existing.status === "LOCKED") {
+            // Payslip sudah final. Laporkan selisihnya — jangan diubah diam-diam.
+            const selisihBonus = totalBonusAgenda - existing.totalBonusAgenda;
+            const selisihPotongan =
+              att.totalPotonganTelat - existing.totalPotonganTelat;
+            const selisihTotal = totalGaji - existing.totalGaji;
+
+            results.push({
+              employeeId: karyawan.id,
+              employeeKode: karyawan.kode,
+              employeeNama: karyawan.nama,
+              gajiPokok: existing.gajiPokok,
+              totalHariKerja: existing.totalHariKerja,
+              totalBonusAgenda: existing.totalBonusAgenda,
+              totalPotonganTelat: existing.totalPotonganTelat,
+              bonusManual: existing.bonusManual,
+              potonganManual: existing.potonganManual,
+              bonusPerforma: existing.bonusPerforma,
+              keteranganBonusPerforma: existing.keteranganBonusPerforma,
+              totalGaji: existing.totalGaji,
+              status: existing.status,
+              action: "skipped",
+              perluRevisi: selisihTotal !== 0,
+              selisihBonus,
+              selisihPotongan,
+              selisihTotal,
+            });
+            continue;
+          }
+
+          // DRAFT — hitung ulang angka otomatis, JAGA field input manual.
+          const updated = await tx.payroll.update({
+            where: { id: existing.id },
+            data: {
+              gajiPokok: gajiPokokNominal,
+              totalHariKerja: totalHariKerjaFinal,
+              totalBonusAgenda,
+              totalPotonganTelat: att.totalPotonganTelat,
+              totalGaji,
+            },
+          });
+
+          await tx.auditLog.create({
+            data: {
+              tabel: "Payroll",
+              recordId: updated.id,
+              aksi: "UPDATE",
+              nilaiSebelum: {
+                totalHariKerja: existing.totalHariKerja,
+                totalBonusAgenda: existing.totalBonusAgenda,
+                totalPotonganTelat: existing.totalPotonganTelat,
+                totalGaji: existing.totalGaji,
+              },
+              nilaiSesudah: {
+                totalHariKerja: updated.totalHariKerja,
+                totalBonusAgenda: updated.totalBonusAgenda,
+                totalPotonganTelat: updated.totalPotonganTelat,
+                totalGaji: updated.totalGaji,
+              },
+              actorId: session.user.id,
+              alasan: "Re-sync payroll DRAFT (generate ulang)",
+            },
+          });
+
+          results.push({
+            employeeId: karyawan.id,
+            employeeKode: karyawan.kode,
+            employeeNama: karyawan.nama,
+            gajiPokok: updated.gajiPokok,
+            totalHariKerja: updated.totalHariKerja,
+            totalBonusAgenda: updated.totalBonusAgenda,
+            totalPotonganTelat: updated.totalPotonganTelat,
+            bonusManual: updated.bonusManual,
+            potonganManual: updated.potonganManual,
+            bonusPerforma: updated.bonusPerforma,
+            keteranganBonusPerforma: updated.keteranganBonusPerforma,
+            totalGaji: updated.totalGaji,
+            status: updated.status,
+            action: "updated",
+            perluRevisi: false,
+            selisihBonus: 0,
+            selisihPotongan: 0,
+            selisihTotal: 0,
+          });
+          continue;
+        }
+
         // Create payroll
         const payroll = await tx.payroll.create({
           data: {
             employeeId: karyawan.id,
             periode: periodeDate,
             gajiPokok: gajiPokokNominal,
-            totalHariKerja: tipe === "HARIAN" ? att.totalHariKerja : null,
+            totalHariKerja: tipe === "HARIAN" ? att.hariUnik.size : null,
             totalBonusAgenda,
             totalPotonganTelat: att.totalPotonganTelat,
             bonusManual,
@@ -291,6 +423,10 @@ export async function POST(request: NextRequest) {
           totalGaji: payroll.totalGaji,
           status: payroll.status,
           action: "created",
+          perluRevisi: false,
+          selisihBonus: 0,
+          selisihPotongan: 0,
+          selisihTotal: 0,
         });
 
         // Collect for audit log
@@ -326,13 +462,20 @@ export async function POST(request: NextRequest) {
   });
 
     const totalGenerated = results.filter((r) => r.action === "created").length;
+    const totalUpdated = results.filter((r) => r.action === "updated").length;
     const totalSkipped = results.filter((r) => r.action === "skipped").length;
+    // Payroll yang LOCKED tapi angkanya sudah tidak sama dengan data terkini.
+    // Ini yang harus direvisi lewat POST /api/payroll/[id]/revise.
+    const perluRevisi = results.filter((r) => r.perluRevisi);
 
     return NextResponse.json({
       periode,
       totalKaryawan: karyawanList.length,
       totalGenerated,
+      totalUpdated,
       totalSkipped,
+      totalPerluRevisi: perluRevisi.length,
+      perluRevisi,
       items: results,
     });
   } catch (err) {

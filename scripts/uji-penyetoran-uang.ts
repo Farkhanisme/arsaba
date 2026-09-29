@@ -22,7 +22,10 @@
 // ekspresi route (dikutip file:line) + query prisma REAL dengan where yang sama
 // persis seperti route — pola yang disetujui plan §10 ("langsung panggil prisma +
 // hitung logika"). RBAC HTTP end-to-end tetap wajib uji manual browser (§10 akhir).
-import { prisma } from "@/lib/prisma";
+import { prisma as prismaRaw } from "@/lib/prisma";
+import { dbClient, tungguDB } from "./db-retry";
+
+const prisma = dbClient(prismaRaw);
 import {
   MAX_FOTO,
   MAX_NOMINAL,
@@ -80,19 +83,8 @@ async function main() {
   const setoranIds: string[] = [];
 
   try {
-    // ---------- Tunggu DB siap (pooler Neon flaky: retry + backoff) ----------
-    let siap = false;
-    for (let attempt = 1; attempt <= 5 && !siap; attempt++) {
-      try {
-        await prisma.store.count();
-        siap = true;
-      } catch {
-        if (attempt === 5) {
-          throw new Error("DB tidak terjangkau setelah 5 percobaan (pooler Neon flaky) — rerun script.");
-        }
-        await new Promise((r) => setTimeout(r, 2000 * attempt));
-      }
-    }
+    // Tunggu DB siap, lalu semua query di bawah sudah dibungkus retry.
+    await tungguDB(prismaRaw);
 
     // ---------- [0] Pure lib (tanpa DB) ----------
     console.log("\n[0] Helper lib/setoran.ts");
@@ -394,13 +386,62 @@ async function main() {
       console.error("❌ Cleanup error:", err);
     }
 
-    const residu =
+    // Residu HARUS dicek dua cara:
+    //  1. berdasarkan id yang skrip ini buat — memastikan yang dihapus hilang.
+    //  2. berdasarkan POLA NAMA — memastikan tidak ada orphan yang terpisah dari
+    //     daftar id (mis. create yang gagal separuh jalan, atau id yang tak
+    //     pernah masuk userIds karena error di tengah).
+    //
+    // Dulu hanya (1), sehingga skrip bisa melaporkan "residu = 0" padahal
+    // record uji yang gagal dibersihkan masih tertinggal di database.
+    const residuById =
       (await prisma.setoranUang.count({ where: { id: { in: setoranIds } } })) +
       (await prisma.buktiSetoran.count({ where: { setoranId: { in: setoranIds } } })) +
       (await prisma.auditLog.count({ where: { recordId: { in: setoranIds } } })) +
       (await prisma.user.count({ where: { id: { in: userIds } } })) +
       (await prisma.store.count({ where: { id: { in: storeIds } } }));
-    assert(residu === 0, "residu data uji = 0", { residu });
+
+    const prefiks = `UJI-`;
+    const residuPola =
+      (await prisma.setoranUang.count({ where: { id: { in: setoranIds } } })) +
+      (await prisma.user.count({ where: { kode: { startsWith: prefiks } } })) +
+      (await prisma.store.count({ where: { nama: { startsWith: prefiks } } }));
+
+    if (residuPola > 0) {
+      // Bersihkan orphan yang tidak tertangkap di atas supaya tidak numbung di
+      // database dan tidak merusak hitungan run berikutnya.
+      const orphanUser = await prisma.user.findMany({
+        where: { kode: { startsWith: prefiks } },
+        select: { id: true },
+      });
+      for (const u of orphanUser) {
+        await prisma.auditLog.deleteMany({ where: { actorId: u.id } });
+        await prisma.setoranUang.deleteMany({ where: { disetorkanOlehId: u.id } });
+        await prisma.setoranUang.deleteMany({ where: { diterimaOlehId: u.id } });
+        await prisma.gajiPokok.deleteMany({ where: { employeeId: u.id } });
+        await prisma.user.delete({ where: { id: u.id } });
+      }
+      const orphanStore = await prisma.store.findMany({
+        where: { nama: { startsWith: prefiks } },
+        select: { id: true },
+      });
+      for (const s of orphanStore) {
+        await prisma.setoranUang.deleteMany({ where: { dariStoreId: s.id } });
+        await prisma.setoranUang.deleteMany({ where: { tokoTujuanId: s.id } });
+        await prisma.store.delete({ where: { id: s.id } });
+      }
+    }
+
+    assert(
+      residuById === 0,
+      `residu data uji (by id) = ${residuById}`,
+      { residuById }
+    );
+    assert(
+      residuPola === 0,
+      `residu data uji (by pola "${prefiks}*") = ${residuPola}`,
+      { residuPola }
+    );
 
     await prisma.$disconnect();
   }

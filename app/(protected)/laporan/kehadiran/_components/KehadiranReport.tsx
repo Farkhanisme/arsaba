@@ -535,7 +535,6 @@ export default function KehadiranReport({ canMarkIzin }: { canMarkIzin: boolean 
                                 <th className="pb-2 pr-3 font-medium text-right">Izin</th>
                                 <th className="pb-2 pr-3 font-medium text-right">Tanpa Ket.</th>
                                 <th className="pb-2 pr-3 font-medium text-right">Luar Jadwal</th>
-                                <th className="pb-2 pr-3 font-medium text-right">Fisik</th>
                                 <th className="pb-2 pr-3 font-medium text-right">%</th>
                                 {canMarkIzin && <th className="pb-2 font-medium" />}
                               </tr>
@@ -575,7 +574,6 @@ export default function KehadiranReport({ canMarkIzin }: { canMarkIzin: boolean 
                                     <td className="py-3 pr-3 text-right font-mono text-blue-600 dark:text-blue-400">{k.hariIzin}</td>
                                     <td className="py-3 pr-3 text-right font-mono text-red-600 dark:text-red-400">{k.hariTanpaKeterangan}</td>
                                     <td className="py-3 pr-3 text-right font-mono">{k.hariDiLuarJadwal}</td>
-                                    <td className="py-3 pr-3 text-right font-mono">{k.hariHadirFisik}</td>
                                     <td
                                       className={`py-3 pr-3 text-right font-mono font-medium ${
                                         k.persentaseKehadiran !== null &&
@@ -634,7 +632,6 @@ export default function KehadiranReport({ canMarkIzin }: { canMarkIzin: boolean 
                                                 <tr className="border-b text-left text-muted-foreground">
                                                   <th className="pb-2 pr-3 font-medium">Tanggal</th>
                                                   <th className="pb-2 pr-3 font-medium">Status</th>
-                                                  <th className="pb-2 pr-3 font-medium">Toko Fisik</th>
                                                   <th className="pb-2 pr-3 font-medium">PAM</th>
                                                   <th className="pb-2 pr-3 font-medium text-right">Telat</th>
                                                   <th className="pb-2 pr-3 font-medium text-right">Potongan</th>
@@ -653,9 +650,6 @@ export default function KehadiranReport({ canMarkIzin }: { canMarkIzin: boolean 
                                                       >
                                                         {labelStatus(item.status)}
                                                       </span>
-                                                    </td>
-                                                    <td className="py-2 pr-3">
-                                                      {item.storeFisikNama ?? "—"}
                                                     </td>
                                                     <td className="py-2 pr-3">
                                                       {item.isPam ? (

@@ -188,7 +188,7 @@ Berdasarkan file data karyawan yang diberikan client, field minimal untuk profil
 - File lama berupa **snapshot roster per bulan** (tab "NEW MEI", "JULI NEW", "AGUSTUS NEW" masing-masing daftar karyawan bulan itu) — pola ini digantikan oleh `riwayat_penempatan` di sistem baru; tidak perlu mempertahankan format "satu tab per bulan".
 - **Mapping alias nama toko saat migrasi** (dikonfirmasi pemilik proyek): "DAPUR RUMAH" → `Dapur Produksi`, "ARSABA DIENG" → `Counter Dieng`. Pastikan skrip migrasi mencocokkan varian penulisan ini (termasuk salah ketik seperti "ARSAA DIENG" dan "AL MADAD WIURI") ke `toko_id` yang benar, bukan membuat toko baru yang tidak sengaja terduplikasi.
 - Banyak baris memiliki data tidak lengkap (NIK/TTL/alamat kosong, contoh: Zidan, Gufron Ali Imron, Sidiq) — **dikonfirmasi: kelengkapan data ini akan diinput menyusul oleh Admin**, bukan diminta ulang ke client. Sistem harus tetap bisa menyimpan karyawan dengan field opsional kosong sejak migrasi awal, dan menyediakan indikator di UI admin ("profil belum lengkap") supaya mudah dilacak siapa saja yang masih perlu dilengkapi. Jangan blokir input data operasional (absensi/gaji) karena field administratif ini kosong.
-- **NIK, tanggal lahir, alamat, dan kontak darurat adalah data pribadi (PII)** — batasi akses lihat/edit hanya untuk Admin dan Manajer. Role lain (termasuk Supervisor) sebaiknya hanya melihat nama, toko, dan role, kecuali diputuskan lain oleh pemilik proyek.
+- **NIK, tanggal lahir, alamat, dan kontak darurat adalah data pribadi (PII)** — akses lihat/edit diberikan kepada **Admin, Supervisor, dan Manajer**. ~~Role lain~~ `KEPALA_TOKO` dan `KARYAWAN` **tidak** boleh melihat PII; mereka hanya melihat nama, toko, dan role. Keputusan ini dikonfirmasi pemilik proyek (organisasi kecil, hanya ada 1 Manajer dan 1 Direktur, sehingga Supervisor adalah operator lapangan yang perlu akses PII untuk tugasnya). Karena itu **jangan** menambahkan gate yang menyembunyikan PII dari Supervisor — itu akan merusak alur kerja yang sudah berjalan.
 
 ### 4.4 Alur & Format Pengiriman Laporan Penjualan
 
@@ -305,30 +305,45 @@ Kepala Toko hanya melihat transaksi yang melibatkan tokonya (sebagai pengirim at
 **Keputusan interim:** tujuan PUSAT memakai `tipeTujuan = PUSAT` dengan `tokoTujuanId = null` — **tanpa** entitas Store "Kantor Pusat" (lihat §12).
 
 ### 5.1 Absensi
-- Karyawan (Supervisor ke bawah, termasuk Kepala Toko) absen lewat foto + geolokasi.
-- Geolokasi **hanya informasi pembantu** bagi verifikator — bukan syarat mutlak/blocking. Karyawan tetap bisa absen dari lokasi mana pun; sistem hanya menampilkan jarak dari toko sebagai referensi saat admin/supervisor memverifikasi.
-- Foto diunggah lewat form di aplikasi, lalu diteruskan server ke Telegram sebagai backend penyimpanan (§10) — disimpan `file_id`, bukan URL sementara.
-- **Sistem tidak mencocokkan absensi dengan jadwal shift secara otomatis.** Tugas mencocokkan ada di Admin/Supervisor saat verifikasi. Yang dicatat sistem:
-  - `absenMasuk` — timestamp asli saat karyawan check-in.
+- **Siapa yang boleh absen**: `KARYAWAN`, `KEPALA_TOKO`, `SUPERVISOR`, `ADMIN`. `MANAJER` dan `DIREKTUR` **tidak** melakukan absensi. Ini ditegakkan di level API (`/api/absensi`, `/checkout`, `/resubmit`) — bukan hanya UI.
+- **`Attendance.storeId` nullable.** Supervisor/Admin boleh check-in tanpa terikat toko. Kehadiran **tidak terikat toko** (§8) — `storeId` hanya jejak administratif dan tidak memengaruhi perhitungan kehadiran, gaji, maupun laporan.
+- Geolokasi **hanya informasi pembantu** bagi verifikator — bukan syarat mutlak/blocking. Latitude/longitude ditampilkan mentah dengan tautan ke Google Maps; **jarak ke toko tidak dihitung**.
+- Foto diunggah lewat form di aplikasi, lalu diteruskan server ke Telegram sebagai backend penyimpanan (§10) — disimpan `file_id`, bukan URL sementara. Akses foto via `/api/telegram/file/[fileId]` **diotorisasi**: hanya pemilik record (karyawan yang absen) atau role `SUPERVISOR/ADMIN/MANAJER`.
+- **`tanggalShift` berasal dari `jamMulai` shift yang sedang berjalan** — bukan dari tanggal kalender check-in. Kalau check-in jatuh di dalam jendela shift yang sudah `APPROVED`, `tanggalShift` = `ShiftInstance.tanggal` shift tersebut. Konsekuensi: check-in jam **02.00 Senin** untuk shift **Minggu 18.00–06.00** tetap terhitung **hari Minggu**. Tanpa shift acuan → fallback ke tanggal kalender WIB.
+  - Jendela pencocokan: `jamMulai ≤ ref + 4 jam` **dan** `jamSelesai > ref`. Karyawan boleh datang hingga 4 jam lebih awal.
+  - Hanya `ShiftInstance` ber-`statusJadwal = "APPROVED"` yang jadi acuan.
+- **Gate check-in tanpa shift**: kalau tidak ada shift `APPROVED` yang mencakup waktu check-in, check-in **ditolak 403** — kecuali `User.bolehAbsenTanpaShift = true` (checkbox per karyawan di Master Karyawan, default `false`).
+- Yang dicatat sistem:
+  - `absenMasuk` — timestamp asli saat karyawan check-in (server, authoritative).
   - `absenKeluar` — timestamp asli saat karyawan check-out.
   - `totalMenitKerja` — dihitung otomatis: `floor((absenKeluar − absenMasuk) / 60000)`, minimum 0.
   - `fotoMasukDiambilPada` / `fotoKeluarDiambilPada`.
-- **`menitTelat` diisi Admin/Supervisor saat verifikasi absen masuk**, satu aksi dengan Approve. `potongan` dihitung server: `potongan = menitTelat × 1000`. Admin hanya mengisi `menitTelat` (integer ≥ 0); server menghitung `potongan` agar konsisten dan tidak bisa dimanipulasi.
+- **`menitTelat` diisi Admin/Supervisor saat verifikasi absen masuk**, satu aksi dengan Approve. Server memberi **saran** yang memperhitungkan toleransi 5 menit: `saran = max(0, menit telat − 5)`, ditampilkan sebagai "saran sistem: N menit" dan bisa diubah admin. `potongan` dihitung server: `potongan = menitTelat × 1000`. Bila tidak ada shift acuan, tidak ada saran — admin mengisi manual.
 - **`menitTelat` hanya berlaku untuk absen masuk.** Tidak ada `menitTelatKeluar` — pulang lebih awal tidak dihitung telat.
 - Karyawan dianggap **hadir** di hari itu setelah absen masuk diverifikasi (status `DIVERIFIKASI`).
 - **Satu kehadiran = satu record Attendance.** Kalau karyawan bekerja dalam dua segmen terpisah di hari yang sama (kasus PAM), maka ada **dua record Attendance** di hari itu.
-- Auto-close tetap berlaku: shift menggantung >20 jam → `autoClosed = true`, `absenKeluar` tetap null. Admin dapat mengisi manual via override-keluar (yang juga menghitung `totalMenitKerja`).
-- **Resubmit** absen masuk yang ditolak tetap berlaku; `absenMasuk` tidak berubah (timestamp asli dipertahankan), hanya foto & `fotoMasukDiambilPada` yang di-update.
-- Field `shiftMulai` dan `shiftSelesai` **tidak ada lagi** di Attendance. Acuan jadwal dibaca dari `ShiftAssignment` saat admin verifikasi (JOIN, bukan disimpan).
+- **Auto-close** (trigger: check-in berikutnya, shift menggantung >20 jam) **mengisi `absenKeluar`** supaya karyawan langsung bisa check-in lagi:
+  - `absenKeluar` = `jamSelesai` shift acuan (bukan waktu saat auto-close dipicu), **fallback `absenMasuk`** bila shift tidak ditemukan. Nilai `jamSelesai` yang dipilih hanya bila `> absenMasuk`.
+  - `totalMenitKerja` = `jamSelesai − absenMasuk` → **tidak pernah melebihi jadwal** (penting untuk gaji tipe `JAM`).
+  - `statusKeluar = "DIVERIFIKASI"` — dianggap selesai, tidak perlu tindak admin. `autoClosed = true` + `autoClosedAt` tetap mencatatjejaknya.
+  - Ditulis satu `AttendanceLog` `KELUAR` dengan `keteranganKoreksi` "Auto-close: tidak ada check-out dalam 20 jam" dan tanpa foto.
+  - Semua ditulis dalam `AuditLog` dengan alasan auto-close.
+  - Override-keluar tetap tersedia untuk kasus `absenKeluar` yang sudah ada tapi nilainya salah.
+- **Resubmit** absen masuk yang ditolak tetap berlaku; `absenMasuk` tidak berubah (timestamp asli dipertahankan), hanya foto & `fotoMasukDiambilPada` yang di-update. Pada alur reject → resubmit → approve, `isPam` yang sudah tersimpan **dipertahankan** bila admin tidak mengirim ulang field tersebut.
+- Field `shiftMulai` dan `shiftSelesai` **tidak ada lagi** di Attendance. Acuan jadwal dibaca dari `ShiftAssignment` saat check-in (atribusi tanggal) dan saat admin verifikasi (saran menit telat) — JOIN, bukan disimpan.
+- Semua perhitungan waktu & pencocokan shift terpusat di `lib/absensi.ts` (`formatWaktuWIB`, `formatTanggalWIB`, `computeTanggalShiftWIB`, `findShiftAcuan`, `findShiftAcuanBatch`, `saranMenitTelat`, `hitungPotongan`, `hitungTotalMenitKerja`, `hitungAbsenKeluarAutoClose`). **Jangan duplikasi konstanta WIB di komponen/page.**
 
 ### 5.1a Verifikasi Absensi
 - Admin/Supervisor membuka daftar absensi `PENDING_VERIFIKASI` di layar verifikasi.
-- Untuk setiap absensi, sistem menampilkan: nama karyawan, toko, `absenMasuk`, `absenKeluar`, foto, jarak dari toko, dan jadwal shift acuan (dari `ShiftAssignment` pada tanggal & toko yang sama, bila ada).
-- Admin mengisi satu field: `menitTelat` (integer, boleh 0).
+- Untuk setiap absensi, sistem menampilkan: nama karyawan, toko (`"Tanpa Toko"` bila `storeId` null), `absenMasuk`, `absenKeluar`, foto, latitude/longitude mentah + tautan Google Maps, dan jadwal shift acuan (dari `ShiftAssignment` yang mencakup waktu absen masuk, bila ada).
+- Admin mengisi satu field: `menitTelat` (integer, boleh 0) — **di-pre-fill dengan saran sistem** (toleransi 5 menit), tetap bisa diubah.
 - Admin mencentang `isPam` bila kehadiran tersebut bagian dari penugasan PAM.
 - Klik Approve → server menyimpan `menitTelat`, menghitung `potongan = menitTelat × 1000`, dan set `statusMasuk = "DIVERIFIKASI"`. Aksi ini dicatat di `AuditLog`.
 - Klik Reject → karyawan dapat resubmit (alur yang sudah ada).
 - Verifikasi absen **keluar** (`statusKeluar`) menggunakan alur terpisah tanpa `menitTelat` (cukup Approve/Reject).
+- Verifikasi absensi sendiri dilarang (`attendance.employeeId === session.user.id` → 403), jadi tidak ada role yang bisa check-in sekaligus memverifikasi absensinya sendiri.
+- Record auto-close sudah `statusKeluar = DIVERIFIKASI` sehingga tidak muncul di antrean; form override-keluar disembunyikan untuk record tersebut.
+- Daftar pending di-batch dalam **satu query shift acuan** (bukan N+1 per item) dan menyertakan `shiftAcuan` + `saranMenitTelat` untuk setiap item.
 
 ### 5.2 Shift
 - Shift dibuat manual atau otomatis (per minggu/per hari), tersimpan di `ShiftInstance` + `ShiftAssignment`.
@@ -352,7 +367,7 @@ Kepala Toko hanya melihat transaksi yang melibatkan tokonya (sebagai pengirim at
 
 **Gaji & pelaporan:**
 - **Gaji dihitung global**, dibebankan ke manajemen pusat (Arsaba Group), **bukan** per toko.
-- `Attendance.storeId` diisi toko tempat karyawan **benar-benar hadir** — untuk laporan kehadiran fisik. Payroll tidak memisahkan per toko.
+- **Kehadiran tidak terikat toko.** `Attendance.storeId` nullable, hanya jejak administratif — tidak memengaruhi kehadiran, gaji, maupun laporan. Konsekuensinya tidak ada lagi "lensa fisik"/`hariHadirFisik`; PAM di toko lain tetap terhitung keberangkatan.
 - `Attendance.isPam` di level Attendance (bukan User), karena satu karyawan bisa punya beberapa Attendance di hari yang sama dengan status PAM berbeda.
 - **Hari kerja dihitung per tanggal unik**: `totalHariKerja` = jumlah `tanggalShift` berbeda dari Attendance terverifikasi (`statusMasuk = "DIVERIFIKASI"`) dalam periode gaji — segmen PAM berganda di hari yang sama tetap dihitung **1 hari**. `totalMenitKerja` dan `potongan` tetap di-SUM dari semua segmen.
 
@@ -377,9 +392,17 @@ Kepala Toko hanya melihat transaksi yang melibatkan tokonya (sebagai pengirim at
 ### 7.1 Aturan Dasar
 - **Gaji pokok ditentukan oleh pusat** (Manajer), bukan per toko — disimpan di level karyawan atau level role, bisa berbeda per individu.
 - Siklus pembayaran: **bulanan**, tapi **perhitungan berbeda per karyawan**:
-  - Ada karyawan yang dihitung **harian** (gaji = rate harian × jumlah hari kerja aktual bulan itu).
-  - Ada karyawan yang dihitung **bulanan** (gaji pokok tetap, disesuaikan potongan/tambahan).
-  - Field `tipe_perhitungan_gaji` (enum: `HARIAN` / `BULANAN`) wajib ada di data karyawan.
+  - Ada karyawan yang dihitung **harian** — `gaji_pokok = tarif_harian × jumlah hari kerja aktual bulan itu`. Tarif disimpan di `User.tarifPerHari`. **Rumusnya memakai tarif harian, bukan `tarif_per_jam × 8`**, karena jam kerja berbeda per toko sehingga konstanta 8 tidak universal.
+  - Ada karyawan yang dihitung **per jam** — `gaji_pokok = tarif_per_jam × jumlah jam kerja bulan itu`. Pembulatan `floor` diterapkan **per hari** lalu dijumlah, bukan atas total menit sebulan (lihat §7.1a). Manajer dapat mengoreksi jam kerja per hari (lihat §7.1a).
+  - Ada karyawan yang dihitung **bulanan** (gaji pokok tetap `GajiPokok.nominal`, disesuaikan potongan/tambahan). `GajiPokok.nominal` **hanya dipakai untuk tipe `BULANAN`**.
+  - Field `tipe_perhitungan_gaji` (enum: `HARIAN` / `BULANAN` / `JAM`) wajib ada di data karyawan.
+- **Tidak ada lembur.** Sesuai rumus di atas, durasi jam kerja tidak menambah gaji untuk tipe `HARIAN` (cukup dihitung per hari hadir) maupun untuk `BULANAN`. Sebaliknya, keterlambatan tidak mengurangi hari kerja untuk tipe `HARIAN`.
+- **Hanya kehadiran terverifikasi yang dibayar.** Hari izin (§8.1) dan hari tanpa keterangan **tidak menambah** `totalHariKerja` maupun `totalMenitKerja`:
+  - tipe `HARIAN` → hari tersebut **tidak dibayar**;
+  - tipe `JAM` → jam pada hari tersebut **tidak dibayar** (dan tidak ada koreksi manual untuk hari tanpa attendance);
+  - tipe `BULANAN` → **tidak terpengaruh**, nominal tetap dibayar penuh.
+  - Konsekuensi yang diterima: karyawan `HARIAN`/`JAM` tidak punya jaminan pendapatan bulanan (sakit 2 minggu = 2 minggu tidak dibayar). Kalau nanti dibutuhkan, penanganannya adalah model **tunjangan sakit / THR terpisah**, **bukan** mengubah aturan ini.
+  - Catatan konsekuensi: jangan memakai `potonganManual` untuk "mengganti" hari izin — itu pengurangan, bukan penambahan.
 - Setiap jobdesk/agenda yang diselesaikan (dan sudah lolos verifikasi) menambah nominal ke gaji sesuai nominal yang diatur per agenda/jobdesk.
 - Potongan keterlambatan (§5.1) otomatis dikurangkan.
 - **Bonus dan potongan tambahan diinput manual oleh manajer**, berdasarkan data absensi dan agenda yang sudah terverifikasi — sistem menyediakan rekomendasi/rincian otomatis (total telat, total agenda selesai, dll), tapi keputusan akhir nominal tetap di tangan manajer sebelum payroll di-lock per bulan.
@@ -388,6 +411,35 @@ Kepala Toko hanya melihat transaksi yang melibatkan tokonya (sebagai pengirim at
 - **Gaji dihitung global** (level manajemen pusat Arsaba Group), tidak dibebankan per toko. Laporan payroll tidak memisahkan per toko.
 - `bonusPerforma` tetap ada sebagai input manual Manajer, tapi tidak terikat ke toko spesifik dalam perhitungan internal.
 - Sumber `totalPotonganTelat` di Payroll = akumulasi `Attendance.potongan` (yang nilainya dihitung server dari `menitTelat` yang diisi admin).
+
+### 7.1a Pembulatan Jam & Koreksi Manual (tipe `JAM`)
+
+Aturan ini **khusus tipe `JAM`**. Tipe `HARIAN` dan `BULANAN` tidak tersentuh.
+
+- **Pembulatan `floor` per hari, lalu dijumlah.** Untuk setiap hari yang terverifikasi: `jam_dibayar = floor(menit_efektif / 60)`. Total bulan = jumlah `jam_dibayar` seluruh hari.
+  - Nilai server yang dipakai: `menit_efektif = Attendance.totalMenitManual ?? Attendance.totalMenitKerja`.
+  - Contoh: 6 hari × 7 jam 50 menit (470 menit) → `6 × floor(470/60)` = **42 jam** (bukan `floor(2820/60)` = 47 jam). Selisihnya 5 jam.
+  - **Secara teknis pembulatan dijalankan per record `Attendance` (per segmen), bukan per tanggal.** Pada kasus umum 1 segmen per hari hasilnya identik. Pada kasus PAM 2 segmen, `floor` dihitung per segmen lalu dijumlah — bukan `floor` atas total menit hari tersebut. Alasannya: `floor` harus memakai nilai yang sudah dikoreksi **per segmen**; kalau dijumlahkan per tanggal, hasil koreksi satu segmen menimpa total hari dan menit segmen lain hilang. Contoh: segmen A 300 → dikoreksi 480, segmen B 300 → 8 jam + 5 jam = **13 jam** (bukan 8 jam).
+  - Jumlah **hari kerja** tetap dihitung dari `tanggalShift` **unik**, terpisah dari perhitungan jam. Jadi 2 segmen di tanggal yang sama = 1 hari kerja.
+- **Koreksi manual oleh Manajer/Admin/Supervisor.** Untuk hari yang tercatat kurang bulat (mis. 7 jam 50 menit), Manajer dapat mengoreksi jam kerja agar dibayar penuh.
+  - Disimpan di `Attendance.totalMenitManual` (nullable = pakai hitungan server). `Attendance.totalMenitKerja` **tidak pernah diubah** — nilai asli server tetap tersimpan sebagai jejak.
+  - Berlaku **per record Attendance (per segmen)**, bukan per tanggal. Kalau satu hari punya 2 segmen PAM, masing-masing segmen dikoreksi terpisah.
+  - **Tanpa batas terhadap durasi shift** — Manajer boleh menaikkan maupun menurunkan, termasuk di atas atau di bawah `jamSelesai − jamMulai`. Batasnya hanya rentang fisik `0..1440` menit.
+  - `alasan` **wajib** (min 5 karakter) dan setiap perubahan wajib masuk `AuditLog` (§8).
+  - Koreksi **tidak berlaku** pada hari izin / hari tanpa keterangan, karena hari itu tidak punya record attendance.
+  - Mengirim `totalMenitManual: null` mengembalikan hari tersebut ke hitungan server (tetap perlu `alasan` + audit).
+- **Tidak boleh saat payroll sudah LOCKED.** Kalau ada payroll `LOCKED` untuk karyawan + periode `tanggalShift` tersebut, koreksi ditolak (409) dan harus lewat mekanisme revisi §7.1b.
+- **Halaman payroll wajib menampilkan rincian per hari** (tanggal, jam server, jam dibayar, sumber nilai) supaya koreksi bisa dilakukan. Menampilkan dampak rupiah sebelum menyimpan sangat disarankan.
+
+### 7.1b Mekanisme Revisi Payroll
+
+- Setelah payroll bulanan di-lock (`status = "LOCKED"`), **tidak ada jalur edit langsung** — `PATCH` biasa tetap menolak dengan 403.
+- Koreksi dilakukan lewat **unlock dengan audit**: `POST /api/payroll/[id]/revise` dengan `{ alasan }` (wajib, min 10 karakter).
+  - Hanya **MANAJER** yang boleh merevisi.
+  - Dalam satu transaksi: `status` kembali ke `DRAFT`, `lockedAt`/`lockedById` dikosongkan, `revisiKe` naik 1, `revisiAlasan` disimpan, dan `AuditLog` ditulis dengan `aksi: "REVISI"` berisi nilai sebelum & sesudah.
+  - Setelah unlock, `PATCH /api/payroll/[id]` (field manual) dan `POST /api/payroll/generate` (re-sync angka otomatis) bisa dipakai, lalu dikunci lagi.
+- `revisiKe` dan `revisiAlasan` **wajib ditampilkan** di payslip supaya terlihat bahwa angka sudah pernah direvisi.
+- Re-sync otomatis (§ generate payroll) **tidak boleh** menimpa field input manual (`bonusManual`, `potonganManual`, `bonusPerforma`, `keteranganBonusPerforma`).
 
 ### 7.2 Dashboard Estimasi Gaji
 - Direktur s/d Admin: dashboard lintas toko (total estimasi payroll semua toko bulan berjalan).
@@ -406,11 +458,12 @@ Kepala Toko hanya melihat transaksi yang melibatkan tokonya (sebagai pengirim at
 Laporan kehadiran lintas toko untuk audit (Direktur, Manajer, Admin, Supervisor):
 
 - **Hari jadwal (baseline)**: jumlah tanggal unik dengan `ShiftAssignment` pada `ShiftInstance` ber-`statusJadwal = APPROVED` dalam periode. Dua segmen di hari yang sama (NORMAL + PAM) dihitung 1 hari.
-- **Hari hadir**: jumlah `tanggalShift` unik dari `Attendance` dengan `statusMasuk = "DIVERIFIKASI"`, tanpa filter toko fisik — PAM di toko lain tetap dihitung "berangkat". Absensi `DITOLAK`/`PENDING_VERIFIKASI` tidak dihitung hadir.
+- **Hari hadir**: jumlah `tanggalShift` unik dari `Attendance` dengan `statusMasuk = "DIVERIFIKASI"`, **tanpa filter toko sama sekali** — kehadiran tidak terikat toko, PAM di toko lain tetap dihitung "berangkat". Absensi `DITOLAK`/`PENDING_VERIFIKASI` tidak dihitung hadir.
 - **Hari izin**: jumlah tanggal unik dengan record `Izin` yang tidak punya attendance terverifikasi. Hadir menang atas izin (record izin pada hari yang ternyata hadir dianggap terlewati). Hanya terhitung bila tanggal tersebut masuk hari jadwal di toko tersebut; izin pada hari tanpa jadwal tidak dihitung.
 - **Tidak hadir** = `max(0, jadwal − hadir)` = **Izin + Tanpa Keterangan**; **Tanpa Keterangan** = `max(0, jadwal − hadir − izin)`.
 - **Ketidakhadiran adalah nilai turunan, bukan record**: sistem tidak pernah membuat catatan "tidak hadir" sendiri. Tidak hadir otomatis terhitung dari baseline − kehadiran terverifikasi — termasuk karyawan yang tidak absen tanpa alasan dan tanpa konfirmasi (muncul sebagai "Tanpa Keterangan" tanpa aksi admin). Syaratnya ada jadwal APPROVED hari itu; tanpa jadwal, ketidakhadiran tidak bisa dinilai.
-- **Lensa ganda per toko**: laporan penugasan (jadwal & ketidakhadiran per toko tempat dijadwalkan) dan lensa fisik (`Attendance.storeId` = toko tempat benar-benar hadir, termasuk PAM).
+- **Lensa per toko = penugasan saja** (jadwal & ketidakhadiran per toko tempat dijadwalkan). Lensa fisik sudah dihapus — kehadiran tidak terikat toko.
+- **Grup "Tanpa Toko"**: karyawan `AKTIF` dengan `User.storeId = null` (Supervisor/Admin yang absen tanpa toko) tampil di grup tersendiri di paling bawah laporan, dengan `jadwalHari = 0`. Grup ini disembunyikan ketika ada filter toko tertentu.
 - **Catatan lensa lintas toko**: total di level "Semua Toko" adalah **penjumlahan lensa per toko**, bukan kehadiran unik perusahaan. Karyawan dapat tampil di dua toko sekaligus (mis. dijadwalkan di toko A awal bulan lalu pindah dan terdaftar AKTIF di toko B) sehingga hari-harinya terhitung dua kali di agregasi lintas toko — ini disengaja (lensa penugasan + lensa terdaftar). Rincian per tanggal (Scope B) menyediakan lensa per hari.
 - **Model `Izin`**: satu record = satu tanggal (`@@unique([employeeId, tanggal])`), `alasan` teks bebas wajib (maks 200 karakter), dicatat `createdBy`, dan setiap create/delete wajib masuk `AuditLog`. Menandai/membatalkan: Manajer, Admin, Supervisor (Direktur lihat saja). Range izin dipecah menjadi record per hari. Tanggal izin **tidak boleh sebelum hari ini (WIB)** — baik saat menandai (POST menolak 400) maupun membatalkan (DELETE menolak 400) — sehingga izin tanggal lewat tidak bisa masuk dan tidak bisa diubah.
 - **Catatan**: daftar jenis izin di atas (`acara_pribadi`, `sakit`) belum dimodelkan sebagai master terpisah — v1 memakai `alasan` teks bebas. Master jenis izin yang bisa dikelola admin adalah pengembangan lanjutan (lihat §12).
@@ -452,6 +505,7 @@ Laporan kehadiran lintas toko untuk audit (Direktur, Manajer, Admin, Supervisor)
 6. Semua timestamp memakai **WIB (Asia/Jakarta)** — belum ada toko lintas zona waktu.
 7. Jangan pilih library atau layanan yang mengharuskan pembayaran (termasuk paket "starter" berbayar) — cek dulu apakah ada alternatif free-tier permanen.
 8. Jika instruksi di dokumen ini ambigu (ditandai "perlu dikonfirmasi" di atas), AI harus membuat implementasi yang **mudah diubah nanti** (jangan desain kaku di sekitar asumsi yang belum pasti), dan menandai di kode/komentar bagian mana yang berdasarkan asumsi.
+9. **PII (NIK, tempat & tanggal lahir, alamat, kontak darurat) boleh diakses oleh Admin, Supervisor, dan Manajer** — lihat §4.3. Jangan memperketat akses ini tanpa keputusan baru pemilik proyek; `KEPALA_TOKO` dan `KARYAWAN` tetap tidak boleh melihat PII.
 
 ---
 
@@ -461,7 +515,8 @@ Sebagian besar poin di versi sebelumnya sudah terjawab (lihat riwayat perubahan 
 
 1. **Detail integrasi Epos**: sedang ditanyakan pemilik proyek ke client — tunggu jawaban sebelum memutuskan apakah modul Epos (§4.2.1) perlu konektor otomatis atau cukup form manual.
 2. **Modul spesifik Counter Dieng**: sedang dikonfirmasi pemilik proyek ke client — field/produk spesifik yang dijual di sana (apakah sama dengan daftar produk Pulsa/PPOB di §4.2.3 atau ada tambahan/pengurangan) menyusul setelah ada jawaban.
-3. **Alasan ketidakhadiran kini dimodelkan via `Izin`** (§8.1: Manajer/Admin/Supervisor menandai per tanggal + alasan teks bebas). **Masih belum dimodelkan**: master jenis izin terpisah (`acara_pribadi`/`sakit` yang bisa dikelola admin), bukti/surat sakit (dokumen), dan kaitan otomatis izin → PAM (§5.3) — menunggu konfirmasi.
+3. **Alasan ketidakhadiran kini dimodelkan via `Izin`** (§8.1: Manajer/Admin/Supervisor menandai per tanggal + alasan teks bebas). **Masih belum dimodelkan**: master jenis izin terpisah (`acara_pribadi`/`sakit` yang bisa dikelola admin), bukti/surat sakit (dokumen), dan kaitan otomatis izin → PAM (§5.3).
+   - **Sudah diputuskan pemilik proyek (2026-09-28):** (a) **semua jenis izin tidak dibayar** — hari izin tidak menambah `totalHariKerja`/`totalMenitKerja` (§7.1), jadi master jenis izin **tidak dibutuhkan untuk perhitungan gaji** dan boleh ditunda; (b) kaitan otomatis izin → PAM tetap belum ada dan itu **disengaja** untuk sekarang — Admin/Supervisor menyusun jadwal penugasan sendiri.
 4. **Penyetoran uang v1 sudah diimplementasikan (§4.5)** — setoran ke PUSAT memakai `tipeTujuan = PUSAT` tanpa entitas Store pusat. **Belum diputuskan**: kapan membuat Store "Kantor Pusat" + field `tipeStore` + filter modul operasional (dibutuhkan saat fitur absensi admin/supervisor di pusat dikerjakan — saat itu setoran ke pusat bisa mengisi `tokoTujuanId`). Juga belum diputuskan: apakah Admin/Supervisor boleh membuat setoran sebagai pengganti Kepala Toko (v1: hanya Kepala Toko).
 
 ---
@@ -469,3 +524,5 @@ Sebagian besar poin di versi sebelumnya sudah terjawab (lihat riwayat perubahan 
 *Dokumen ini sudah mencakup jawaban dari tiga putaran diskusi. Perbarui bagian §12 setiap kali ada jawaban baru, dan revisi bagian terkait di atas.*
 
 *Perubahan putaran ke-3 (§5.1, §5.1a, §5.2, §5.3, §7.1): sistem tidak lagi mencocokkan absensi dengan jadwal secara otomatis. `menitTelat` diisi admin saat verifikasi, `potongan` dihitung server. PAM dicatat sebagai Attendance terpisah per segmen, ditandai `isPam` saat verifikasi. Gaji dihitung global, tidak dibebankan per toko. Field `Attendance.shiftMulai`/`shiftSelesai` dihapus; acuan jadwal dibaca dari `ShiftAssignment`.*
+
+*Perubahan putaran ke-4 (§5.1, §5.1a, §5.3, §8): `Attendance.storeId` jadi nullable — Supervisor/Admin boleh absen tanpa toko, dan **kehadiran tidak lagi terikat toko** (lensa fisik/`hariHadirFisik` dihapus; laporan menampilkan grup "Tanpa Toko"). Role check check-in ditegakkan di API: `KARYAWAN`/`KEPALA_TOKO`/`SUPERVISOR`/`ADMIN`; `MANAJER`/`DIREKTUR` tidak absen. `tanggalShift` kini diambil dari `jamMulai` shift APPROVED yang mencakup waktu check-in (jendela 4 jam sebelum mulai s/d selesai) sehingga shift lintas tengah malam terhitung pada hari mulai. Check-in tanpa shift ditolak kecuali `User.bolehAbsenTanpaShift` (default false). Auto-close mengisi `absenKeluar` dengan `jamSelesai` shift (fallback `absenMasuk`) dan `statusKeluar = DIVERIFIKASI` sehingga karyawan bisa langsung check-in lagi tanpa payslip melebihi jadwal. Server memberi saran `menitTelat` dengan toleransi 5 menit (admin tetap menginput final). Jarak ke toko tidak dihitung — lat/long mentah + tautan Google Maps. Akses foto Telegram diotorisasi per pemilik record. Semua helper WIB & pencocokan shift dipusatkan di `lib/absensi.ts`.*

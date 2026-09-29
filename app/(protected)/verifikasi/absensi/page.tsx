@@ -5,20 +5,9 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { AccessDenied } from "@/components/ui/access-denied";
+import { formatWaktuWIB } from "@/lib/absensi";
 
 const ALLOWED_ROLES = ["SUPERVISOR", "ADMIN", "MANAJER"];
-const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
-
-function formatWaktuWIB(date: Date | null): string {
-  if (!date) return "-";
-  const wib = new Date(date.getTime() + WIB_OFFSET_MS);
-  const yyyy = wib.getUTCFullYear();
-  const mm = String(wib.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(wib.getUTCDate()).padStart(2, "0");
-  const hh = String(wib.getUTCHours()).padStart(2, "0");
-  const mi = String(wib.getUTCMinutes()).padStart(2, "0");
-  return `${dd}/${mm}/${yyyy} ${hh}:${mi} WIB`;
-}
 
 export default async function VerifikasiAbsensiPage() {
   const session = await auth();
@@ -73,13 +62,18 @@ export default async function VerifikasiAbsensiPage() {
                 <CardTitle className="text-base">{a.employee.nama}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-1 text-sm">
-                <p>Toko: {a.store.nama}</p>
+                <p>Toko: {a.store?.nama ?? "Tanpa Toko"}</p>
                 <p>
                   Masuk: {formatWaktuWIB(a.absenMasuk)} — {a.statusMasuk}
                 </p>
                 <p>
                   Keluar: {formatWaktuWIB(a.absenKeluar)} — {a.statusKeluar}
                 </p>
+                {a.autoClosed && (
+                  <p className="text-muted-foreground">
+                    Auto-close: tidak ada check-out dalam 20 jam
+                  </p>
+                )}
               </CardContent>
             </Card>
           </Link>

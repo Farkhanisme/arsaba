@@ -102,11 +102,19 @@ model User {
 
   role                Role                 @default(KARYAWAN)
   status              StatusKaryawan       @default(AKTIF)
+  // Absen tanpa punya ShiftInstance APPROVED pada tanggal check-in.
+  // Default false: karyawan harus punya jadwal, kalau tidak hubungi admin.
+  bolehAbsenTanpaShift Boolean            @default(false)
   tipePerhitunganGaji TipePerhitunganGaji?
+  // Tarif per jam — dipakai HANYA saat tipePerhitunganGaji = JAM.
   tarifPerJam          Int?
+  // Tarif per hari — dipakai HANYA saat tipePerhitunganGaji = HARIAN.
+  // Dipisah dari tarifPerJam karena jam kerja berbeda per toko, jadi rate
+  // harian TIDAK bisa diturunkan dari tarifPerJam × konstanta jam (lihat §7.1).
+  tarifPerHari         Int?
   tanggalMasuk        DateTime?
 
-  // --- Data pribadi (PII) — akses baca/tulis dibatasi Admin & Manajer saja di level aplikasi (§3, §11) ---
+  // --- Data pribadi (PII) — akses baca/tulis untuk Admin, Supervisor, dan Manajer (§4.3, §11) ---
   nik           String?   @unique
   tempatLahir   String?
   tanggalLahir  DateTime?
@@ -120,6 +128,7 @@ model User {
   // --- Relasi ---
   attendances         Attendance[] @relation("EmployeeAttendances")
   verifiedLogs AttendanceLog[] @relation("VerifierLogs")
+  koreksiJamAttendance Attendance[] @relation("KoreksiJamOleh")
 
   shiftInstancesCreated   ShiftInstance[]   @relation("JadwalCreator")
   shiftInstancesApproved  ShiftInstance[]   @relation("JadwalApprover")
@@ -202,18 +211,21 @@ model Attendance {
   id         String @id @default(cuid())
   employee   User   @relation("EmployeeAttendances", fields: [employeeId], references: [id])
   employeeId String
-  store      Store  @relation(fields: [storeId], references: [id])
-  storeId    String
+  // Nullable: Supervisor/Admin bisa check-in tanpa terikat toko (§5.1).
+  // Kehadiran dihitung dari tanggalShift unik, tidak bergantung toko.
+  store   Store? @relation(fields: [storeId], references: [id])
+  storeId String?
 
   tanggalShift DateTime  @db.Date
 
   // Kapan karyawan dianggap masuk/pulang (dari log pertama untuk masuk,
-  // dari log terbaru untuk keluar). Auto-close tidak mengisinya.
+  // dari log terbaru untuk keluar). Auto-close MENGISI absenKeluar dengan
+  // jamSelesai shift (fallback absenMasuk) supaya karyawan bisa check-in lagi.
   absenMasuk  DateTime
   absenKeluar DateTime?
 
   // Kapan foto yang dipakai diambil (bisa beda dari absenMasuk/absenKeluar
-  // kalau ada resubmit)
+  // kalau ada resubmit). Auto-close tidak mengisi ini.
   fotoMasukDiambilPada  DateTime
   fotoKeluarDiambilPada DateTime?
 
@@ -224,16 +236,27 @@ model Attendance {
   statusMasuk  StatusVerifikasi @default(PENDING_VERIFIKASI)
   statusKeluar StatusVerifikasi @default(PENDING_VERIFIKASI)
 
-  // Auto-close untuk shift yang tidak check-out
+  // Auto-close untuk shift yang tidak check-out (> 20 jam)
   autoClosed   Boolean   @default(false)
   autoClosedAt DateTime?
   isPam        Boolean   @default(false)
   totalMenitKerja Int @default(0)
 
+  // Koreksi jam kerja manual (P0-7, spesifikasi §7.1a) — HANYA untuk tipe JAM.
+  // null = pakai totalMenitKerja apa adanya. Nilai server TIDAK PERNAH diubah
+  // supaya asal-usul angka tetap terlihat.
+  totalMenitManual Int?
+  koreksiJamAlasan String?
+  koreksiJamOlehId String?
+  koreksiJamPada   DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   logs AttendanceLog[]
+
+  // Relasi siapa yang mengoreksi jam kerja manual (§7.1a).
+  koreksiJamOleh User? @relation("KoreksiJamOleh", fields: [koreksiJamOlehId], references: [id])
 
   @@index([employeeId])
   @@index([storeId])
@@ -274,6 +297,8 @@ model AttendanceLog {
   @@index([attendanceId])
   @@index([jenis])
   @@index([status])
+  // Dipakai untuk otorisasi proxy foto di /api/telegram/file/[fileId]
+  @@index([fotoFileId])
 }
 
 // ============ IZIN (KETIDAKHADIRAN BERALASAN) ============
@@ -458,6 +483,11 @@ model Payroll {
   status     String    @default("DRAFT") // DRAFT | LOCKED
   lockedAt   DateTime?
   lockedById String?
+
+  // Jejak revisi (§7.1b). Sekali LOCKED payroll tidak bisa diubah langsung;
+  // koreksi dilakukan lewat unlock-with-audit yang menaikkan revisiKe.
+  revisiKe     Int       @default(0)
+  revisiAlasan String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

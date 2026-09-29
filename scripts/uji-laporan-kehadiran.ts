@@ -12,7 +12,10 @@
 //   - Lensa ganda (P1): karyawan tampil di toko baseline dan toko terdaftar.
 //
 // Periode uji: 2026-08 (bulan lampau) agar tidak bentrok dengan data berjalan.
-import { prisma } from "@/lib/prisma";
+import { prisma as prismaRaw } from "@/lib/prisma";
+import { dbClient, tungguDB } from "./db-retry";
+
+const prisma = dbClient(prismaRaw);
 import {
   getLaporanKehadiran,
   getRincianKehadiran,
@@ -49,21 +52,8 @@ async function main() {
   const anggotaIds: string[] = []; // karyawan uji (untuk cleanup & cek residu)
 
   try {
-    // ---------- Tunggu DB siap (pooler Neon flaky: retry + backoff) ----------
-    let siap = false;
-    for (let attempt = 1; attempt <= 5 && !siap; attempt++) {
-      try {
-        await prisma.store.count();
-        siap = true;
-      } catch {
-        if (attempt === 5) {
-          throw new Error(
-            "DB tidak terjangkau setelah 5 percobaan (pooler Neon flaky) — rerun script."
-          );
-        }
-        await new Promise((r) => setTimeout(r, 2000 * attempt));
-      }
-    }
+    // Tunggu DB siap, lalu semua query di bawah sudah dibungkus retry.
+    await tungguDB(prismaRaw);
 
     // ---------- Set up data uji ----------
     const aktor = await prisma.user.create({
@@ -76,9 +66,10 @@ async function main() {
     storeAId = storeA.id;
     storeBId = storeB.id;
 
-    const mkKaryawan = (kode: string, storeId: string, tipe: "HARIAN" | "BULANAN") =>
+    // storeId nullable — karyawan tanpa toko (Supervisor/Admin) juga absen.
+    const mkKaryawan = (kode: string, storeId: string | null, tipe: "HARIAN" | "BULANAN") =>
       prisma.user.create({
-        data: { kode: `${kode}-${suffix}`, nama: kode, role: "KARYAWAN", status: "AKTIF", tipePerhitunganGaji: tipe, storeId },
+        data: { kode: `${kode}-${suffix}`, nama: kode, role: storeId ? "KARYAWAN" : "SUPERVISOR", status: "AKTIF", tipePerhitunganGaji: tipe, storeId },
       });
 
     const uji001 = await mkKaryawan("UJI-001", storeAId, "HARIAN");
@@ -86,7 +77,8 @@ async function main() {
     const uji003 = await mkKaryawan("UJI-003", storeAId, "HARIAN");
     const uji004 = await mkKaryawan("UJI-004", storeBId, "HARIAN"); // ditugaskan di A, terdaftar di B
     const uji005 = await mkKaryawan("UJI-005", storeAId, "HARIAN"); // tanpa jadwal & tanpa hadir
-    anggotaIds.push(uji001.id, uji002.id, uji003.id, uji004.id, uji005.id);
+    const uji006 = await mkKaryawan("UJI-006", null, "BULANAN"); // tanpa toko (Supervisor)
+    anggotaIds.push(uji001.id, uji002.id, uji003.id, uji004.id, uji005.id, uji006.id);
 
     // Instance APPROVED (1 per tanggal) + assignment per karyawan.
     const mkInstance = (storeId: string, tanggal: Date) =>
@@ -122,8 +114,9 @@ async function main() {
     await mkAssignment(instA1.id, uji004.id, tgl(3));
     await mkAssignment(instA2.id, uji004.id, tgl(4));
 
-    // Attendance DIVERIFIKASI.
-    const mkHadir = (employeeId: string, storeId: string, tanggal: Date, isPam = false) =>
+    // Attendance DIVERIFIKASI. Parameter storeId nullable — tidak ada lagi yang
+    // butuh tokonya untuk menghitung kehadiran, hanya jejak administratif.
+    const mkHadir = (employeeId: string, storeId: string | null, tanggal: Date, isPam = false) =>
       prisma.attendance.create({
         data: {
           employeeId, storeId, tanggalShift: tanggal,
@@ -137,6 +130,10 @@ async function main() {
     await mkHadir(uji002.id, storeAId, tgl(3));
     await mkHadir(uji002.id, storeAId, tgl(4));
     await mkHadir(uji002.id, storeBId, tgl(5), true); // PAM di toko lain
+    // Karyawan tanpa toko (Supervisor/Admin): storeId null, tanpa shift.
+    await mkHadir(uji006.id, null, tgl(3));
+    await mkHadir(uji006.id, null, tgl(4));
+    await mkHadir(uji006.id, null, tgl(5));
     await mkHadir(uji003.id, storeAId, tgl(3));
     await mkHadir(uji003.id, storeAId, tgl(4));
     await mkHadir(uji004.id, storeAId, tgl(3));
@@ -188,9 +185,30 @@ async function main() {
     const k002 = carik(repA!.karyawan, "UJI-002");
     assert(
       k002?.jadwalHari === 3 && k002?.hariHadir === 3 && k002?.hariIzin === 0 &&
-        k002?.hariTanpaKeterangan === 0 && k002?.hariHadirFisik === 2 &&
+        k002?.hariTanpaKeterangan === 0 &&
         k002?.tipePerhitunganGaji === "BULANAN",
-      "UJI-002 PAM lintas toko → jadwal 3, hadir 3 (PAM berangkat), tanpa-ket 0, fisik A = 2, tipe BULANAN", k002
+      "UJI-002 PAM lintas toko → jadwal 3, hadir 3 (PAM berangkat), tanpa-ket 0, tipe BULANAN", k002
+    );
+
+    // Karyawan tanpa toko: muncul di grup "Tanpa Toko" dengan hadir 3, jadwal 0.
+    const repTanpaToko = lap.stores.find((s) => s.storeNama === "Tanpa Toko");
+    assert(
+      repTanpaToko !== undefined,
+      "Grup 'Tanpa Toko' muncul di laporan (Supervisor tanpa toko)", repTanpaToko
+    );
+    const k006 = carik(repTanpaToko!.karyawan, "UJI-006");
+    assert(
+      k006?.jadwalHari === 0 && k006?.hariHadir === 3 && k006?.hariDiLuarJadwal === 3 &&
+        k006?.persentaseKehadiran === null,
+      "UJI-006 tanpa toko → jadwal 0, hadir 3, di-luar-jadwal 3, % null", k006
+    );
+    assert(
+      lap.stores[lap.stores.length - 1]?.storeNama === "Tanpa Toko",
+      "Grup 'Tanpa Toko' berada di posisi paling bawah"
+    );
+    assert(
+      lapA.stores.every((s) => s.storeNama !== "Tanpa Toko"),
+      "Filter toko.hide grup 'Tanpa Toko'"
     );
 
     const k003 = carik(repA!.karyawan, "UJI-003");
@@ -239,13 +257,14 @@ async function main() {
     const sumHadir = sum((s) => s!.totalHariHadir);
     const sumIzin = sum((s) => s!.totalHariIzin);
     const sumTanpaKet = sum((s) => s!.totalHariTanpaKeterangan);
+    // (sum seluruh grup termasuk "Tanpa Toko": 11 + 3 hadir UJI-006 = 14)
     assert(
-      sumJadwal === 11 && sumHadir === 11 && sumIzin === 1 && sumTanpaKet === 1,
-      "Agregasi lintas toko: jadwal 11, hadir 11 (UJI-004 2x — P1 doc), izin 1, tanpa-ket 1",
+      sumJadwal === 11 && sumHadir === 14 && sumIzin === 1 && sumTanpaKet === 1,
+      "Agregasi lintas toko (+ grup Tanpa Toko): jadwal 11, hadir 14 (UJI-004 2x — P1 doc; UJI-006 3x), izin 1, tanpa-ket 1",
       { sumJadwal, sumHadir, sumIzin, sumTanpaKet }
     );
     console.log(
-      "  ℹ P1-doc: hadir lintas toko = 11 > hadir unik perusahaan = 9 (UJI-004 dihitung di toko A dan B) — disengaja, lihat spec §8.1."
+      "  ℹ P1-doc: hadir lintas toko = 14 > hadir unik perusahaan = 12 (UJI-004 dihitung di A dan B, UJI-006 di grup Tanpa Toko) — disengaja, lihat spec §8.1."
     );
 
     console.log(`\n[5] Rincian per tanggal (Scope B.1) + invarian vs agregat`);
@@ -292,14 +311,13 @@ async function main() {
       { agg: agg003, rin: rin003.ringkasan }
     );
 
-    // UJI-002 lensa A: D3 (tgl 5) HADIR via PAM, fisik = toko B.
+    // UJI-002 lenses A: D3 (tgl 5) HADIR via PAM. Lensa toko sudah dihapus
+    // dari domain — hanya status + penanda PAM yang tersisa.
     const rin002 = await getRincianKehadiran(rinArgs(uji002.id, storeAId));
     const pamDay = rin002.items.find((i) => i.tanggal === fmtTgl(5));
     assert(
-      pamDay?.status === "HADIR" &&
-        pamDay?.isPam === true &&
-        pamDay?.storeFisikNama === storeB.nama,
-      "Rincian UJI-002 D3: HADIR + isPam + fisik toko B",
+      pamDay?.status === "HADIR" && pamDay?.isPam === true,
+      "Rincian UJI-002 D3: HADIR + isPam",
       pamDay
     );
 

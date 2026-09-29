@@ -1,11 +1,18 @@
 import { auth } from "@/auth";
+import { prisma } from "@/lib/prisma";
 import { getTelegramFileUrl } from "@/lib/telegram";
 import { NextRequest, NextResponse } from "next/server";
+
+const VERIFIER_ROLES = ["SUPERVISOR", "ADMIN", "MANAJER"];
 
 // GET /api/telegram/file/[fileId]
 // Proxy file dari Telegram agar TELEGRAM_BOT_TOKEN tidak bocor ke browser.
 // URL asli dari getTelegramFileUrl mengandung token — JANGAN pernah dikirim
 // ke client secara langsung.
+//
+// Otorisasi: fileId hanya boleh diambil oleh pemiliknya (karyawan yang absen)
+// atau role verifier. Tanpa ini, siapa pun yang login bisa melihat foto
+// absensi orang lain selama tahu fileId-nya.
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ fileId: string }> }
@@ -19,6 +26,58 @@ export async function GET(
     const { fileId } = await params;
     if (!fileId || fileId.length < 10 || fileId.length > 200) {
       return NextResponse.json({ error: "fileId tidak valid" }, { status: 400 });
+    }
+
+    const isVerifier = VERIFIER_ROLES.includes(session.user.role);
+
+    // File bisa milik AttendanceLog (foto absensi), BuktiSetoran (bukti setoran)
+    // atau Agenda (bukti agenda). Semuanya wajib lolos cek otorisasi dulu.
+    //
+    // SENGJAJA short-circuit + SEQUENTIAL (bukan Promise.all): Neon pooler
+    // free-tier sering drop koneksi (P1001) saat beberapa query paralel dari
+    // satu request. Kasus umum (foto absensi) cukup 1 query.
+    const log = await prisma.attendanceLog.findFirst({
+      where: { fotoFileId: fileId },
+      select: { attendance: { select: { employeeId: true } } },
+    });
+    if (log) {
+      if (!isVerifier && log.attendance.employeeId !== session.user.id) {
+        return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+      }
+    } else {
+      const bukti = await prisma.buktiSetoran.findFirst({
+        where: { fileId },
+        select: {
+          setoran: {
+            select: { disetorkanOlehId: true, diterimaOlehId: true },
+          },
+        },
+      });
+      if (bukti) {
+        const { disetorkanOlehId, diterimaOlehId } = bukti.setoran;
+        if (
+          !isVerifier &&
+          disetorkanOlehId !== session.user.id &&
+          diterimaOlehId !== session.user.id
+        ) {
+          return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+        }
+      } else {
+        const agenda = await prisma.agenda.findFirst({
+          where: { OR: [{ buktiBeforeFileId: fileId }, { buktiAfterFileId: fileId }] },
+          select: { targetEmployeeId: true, createdById: true },
+        });
+        if (!agenda) {
+          return NextResponse.json({ error: "File tidak ditemukan." }, { status: 404 });
+        }
+        if (
+          !isVerifier &&
+          agenda.targetEmployeeId !== session.user.id &&
+          agenda.createdById !== session.user.id
+        ) {
+          return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+        }
+      }
     }
 
     const url = await getTelegramFileUrl(fileId);

@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { hitungTotalMenitKerja } from "@/lib/absensi";
 import { NextRequest, NextResponse } from "next/server";
 
 const ALLOWED_ROLES = ["SUPERVISOR", "ADMIN", "MANAJER"];
@@ -80,10 +81,7 @@ export async function PATCH(
     }
 
     const now = new Date();
-    const totalMenitKerja = Math.max(
-      0,
-      Math.floor((absenKeluar.getTime() - attendance.absenMasuk.getTime()) / 60000)
-    );
+    const totalMenitKerja = hitungTotalMenitKerja(attendance.absenMasuk, absenKeluar);
 
     const updated = await prisma.attendance.update({
       where: { id },

@@ -1,15 +1,28 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { uploadToTelegram } from "@/lib/telegram";
-import { computeTanggalShiftWIB } from "@/lib/absensi";
+import {
+  AUTO_CLOSE_MS,
+  computeTanggalShiftWIB,
+  findShiftAcuan,
+  formatTanggalWIB,
+  hitungAbsenKeluarAutoClose,
+  hitungTotalMenitKerja,
+} from "@/lib/absensi";
 import { NextRequest, NextResponse } from "next/server";
 import type { Attendance, AttendanceLog } from "@prisma/client";
 
-const AUTO_CLOSE_MS = 20 * 60 * 60 * 1000;
+// Supervisor/Admin juga boleh absen (bisa tanpa toko). Manajer & Direktur tidak.
+const ALLOWED_CHECKIN_ROLES = ["KARYAWAN", "KEPALA_TOKO", "SUPERVISOR", "ADMIN"];
 
 // POST /api/absensi — CHECK-IN.
-// absenMasuk ditentukan server. Auto-close lazy untuk shift menggantung >20 jam.
-// menitTelat/potongan diisi 0 saat check-in; Admin mengisi saat verifikasi (V4e-1).
+// absenMasuk & tanggalShift ditentukan server. tanggalShift diambil dari
+// jamMulai ShiftAssignment APPROVED yang mencakup waktu check-in, sehingga
+// check-in jam 02.00 Senin untuk shift Minggu 18.00–06.00 tetap terhitung
+// hari Minggu. Tanpa shift → fallback tanggal kalender WIB, dan hanya boleh
+// bila User.bolehAbsenTanpaShift = true.
+// Auto-close lazy: shift menggantung >20 jam ditutup dengan absenKeluar =
+// jamSelesai shift (fallback absenMasuk) supaya karyawan bisa check-in lagi.
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
@@ -17,16 +30,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
 
-    if (!session.user.storeId) {
+    if (!ALLOWED_CHECKIN_ROLES.includes(session.user.role)) {
       return NextResponse.json(
-        {
-          error:
-            "Akun ini tidak terhubung ke toko manapun, tidak bisa mengajukan absensi",
-        },
-        { status: 400 }
+        { error: "Role Anda tidak melakukan absensi." },
+        { status: 403 }
       );
     }
-    const storeId = session.user.storeId;
+
+    const employeeId = session.user.id;
+    const storeId = session.user.storeId ?? null;
 
     const formData = await request.formData();
     const foto = formData.get("foto") as File | null;
@@ -57,26 +69,71 @@ export async function POST(request: NextRequest) {
 
     const now = new Date();
 
-    // Auto-close lazy: tutup shift menggantung > 20 jam
+    // --- Auto-close lazy: tutup shift menggantung > 20 jam --------------
     const batasAutoClose = new Date(now.getTime() - AUTO_CLOSE_MS);
-    await prisma.attendance.updateMany({
+    const menggantung = await prisma.attendance.findMany({
       where: {
-        employeeId: session.user.id,
+        employeeId,
         absenKeluar: null,
         autoClosed: false,
         absenMasuk: { lt: batasAutoClose },
       },
-      data: {
-        autoClosed: true,
-        autoClosedAt: now,
-        statusKeluar: "PENDING_VERIFIKASI",
-      },
+      select: { id: true, absenMasuk: true },
     });
 
-    // Cegah check-in dobel
+    for (const shift of menggantung) {
+      // Shift acuan dicari relatif terhadap absenMasuk record itu, bukan `now`.
+      const acuan = await findShiftAcuan(employeeId, shift.absenMasuk);
+      const absenKeluar = hitungAbsenKeluarAutoClose(shift.absenMasuk, acuan);
+
+      await prisma.$transaction(async (tx) => {
+        await tx.attendance.update({
+          where: { id: shift.id },
+          data: {
+            absenKeluar,
+            totalMenitKerja: hitungTotalMenitKerja(shift.absenMasuk, absenKeluar),
+            // Langsung DIVERIFIKASI: auto-close dianggap sudah selesai, tidak
+            // perlu ditindak admin.
+            statusKeluar: "DIVERIFIKASI",
+            autoClosed: true,
+            autoClosedAt: now,
+            logs: {
+              create: {
+                jenis: "KELUAR",
+                fotoFileId: null,
+                absenServerPada: absenKeluar,
+                status: "DIVERIFIKASI",
+                verifiedById: null,
+                verifiedAt: now,
+                keteranganKoreksi: `Auto-close: tidak ada check-out dalam ${AUTO_CLOSE_MS / 3600000} jam`,
+              },
+            },
+          },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            tabel: "Attendance",
+            recordId: shift.id,
+            aksi: "UPDATE",
+            nilaiSesudah: {
+              autoClosed: true,
+              autoClosedAt: now.toISOString(),
+              absenMasuk: shift.absenMasuk.toISOString(),
+              absenKeluar: absenKeluar.toISOString(),
+              statusKeluar: "DIVERIFIKASI",
+            },
+            actorId: employeeId,
+            alasan: "Auto-close shift menggantung (> 20 jam) saat check-in berikutnya",
+          },
+        });
+      });
+    }
+
+    // --- Cegah check-in dobel --------------------------------------------
     const existing = await prisma.attendance.findFirst({
       where: {
-        employeeId: session.user.id,
+        employeeId,
         absenKeluar: null,
         autoClosed: false,
       },
@@ -91,6 +148,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // --- Shift acuan & tanggalShift -------------------------------------
+    const shiftAcuan = await findShiftAcuan(employeeId, now);
+
+    if (!shiftAcuan && !session.user.bolehAbsenTanpaShift) {
+      return NextResponse.json(
+        {
+          error:
+            "Anda belum punya jadwal shift hari ini, jadi tidak bisa absen. Hubungi admin.",
+        },
+        { status: 403 }
+      );
+    }
+
+    const tanggalShift = shiftAcuan?.tanggal ?? computeTanggalShiftWIB(now);
+
     const arrayBuffer = await foto.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const filename = foto.name || `absensi-masuk-${Date.now()}.jpg`;
@@ -98,12 +170,10 @@ export async function POST(request: NextRequest) {
       asDocument: false,
     });
 
-    const tanggalShift = computeTanggalShiftWIB(now);
-
     const attendance = await prisma.$transaction(async (tx) => {
       const created = await tx.attendance.create({
         data: {
-          employeeId: session.user.id,
+          employeeId,
           storeId,
           tanggalShift,
           absenMasuk: now,
@@ -132,7 +202,7 @@ export async function POST(request: NextRequest) {
             id: created.id,
             employeeId: created.employeeId,
             storeId: created.storeId,
-            tanggalShift: created.tanggalShift.toISOString(),
+            tanggalShift: formatTanggalWIB(created.tanggalShift),
             absenMasuk: created.absenMasuk.toISOString(),
             menitTelat: created.menitTelat,
             potongan: created.potongan,
@@ -140,8 +210,16 @@ export async function POST(request: NextRequest) {
             statusKeluar: created.statusKeluar,
             isPam: created.isPam,
             autoClosed: created.autoClosed,
+            shiftAcuan: shiftAcuan
+              ? {
+                  assignmentId: shiftAcuan.assignmentId,
+                  segmen: shiftAcuan.segmen,
+                  jamMulai: shiftAcuan.jamMulai.toISOString(),
+                  jamSelesai: shiftAcuan.jamSelesai.toISOString(),
+                }
+              : null,
           },
-          actorId: session.user.id,
+          actorId: employeeId,
         },
       });
 
@@ -163,6 +241,13 @@ export async function POST(request: NextRequest) {
       statusKeluar: attendance.statusKeluar,
       fotoMasukDiambilPada: attendance.fotoMasukDiambilPada.toISOString(),
       autoClosed: attendance.autoClosed,
+      shiftAcuan: shiftAcuan
+        ? {
+            segmen: shiftAcuan.segmen,
+            jamMulai: shiftAcuan.jamMulai.toISOString(),
+            jamSelesai: shiftAcuan.jamSelesai.toISOString(),
+          }
+        : null,
       logs: attendance.logs.map((l) => ({
         id: l.id,
         jenis: l.jenis,

@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { bolehSetRole, PESAN_TIDAK_BERWENANG_ROLE } from "@/lib/rbac";
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import type { Role } from "@prisma/client";
@@ -82,6 +83,7 @@ export async function GET(request: NextRequest) {
         tanggalMasuk: true,
         tipePerhitunganGaji: true,
         tarifPerJam: true,
+        bolehAbsenTanpaShift: true,
       },
     });
 
@@ -98,6 +100,7 @@ export async function GET(request: NextRequest) {
         tanggalMasuk: u.tanggalMasuk ? u.tanggalMasuk.toISOString() : null,
         tipePerhitunganGaji: u.tipePerhitunganGaji,
         tarifPerJam: u.tarifPerJam,
+        bolehAbsenTanpaShift: u.bolehAbsenTanpaShift,
       })),
     });
   } catch (err) {
@@ -155,6 +158,15 @@ export async function POST(request: NextRequest) {
       );
     }
     const roleTyped = role as Role;
+
+    // Hierarki: actor hanya boleh membuat akun dengan role di bawah dirinya.
+    // TANPA guard ini SUPERVISOR bisa membuat akun MANAJER/DIREKTUR langsung.
+    if (!bolehSetRole(session.user.role, roleTyped)) {
+      return NextResponse.json(
+        { error: PESAN_TIDAK_BERWENANG_ROLE },
+        { status: 403 }
+      );
+    }
 
     const storeId =
       typeof body.storeId === "string" && body.storeId.length > 0

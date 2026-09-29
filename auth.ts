@@ -50,6 +50,7 @@ const nextAuth = NextAuth({
           role: user.role,
           storeId: user.storeId ?? null,
           status: user.status,
+          bolehAbsenTanpaShift: user.bolehAbsenTanpaShift,
         };
       },
     }),
@@ -63,6 +64,7 @@ const nextAuth = NextAuth({
         token.storeId = user.storeId ?? null;
         token.status = user.status!;
         token.nama = user.nama!;
+        token.bolehAbsenTanpaShift = user.bolehAbsenTanpaShift!;
       }
       return token;
     },
@@ -74,6 +76,7 @@ const nextAuth = NextAuth({
         session.user.storeId = token.storeId;
         session.user.status = token.status;
         session.user.nama = token.nama;
+        session.user.bolehAbsenTanpaShift = token.bolehAbsenTanpaShift;
       }
       return session;
     },

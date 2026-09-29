@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,6 +38,8 @@ type PayrollData = {
   status: string;
   lockedAt: string | null;
   lockedById: string | null;
+  revisiKe: number;
+  revisiAlasan: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -58,14 +61,163 @@ function formatTanggalLokal(dateStr: string | null): string {
 
 const MAX_AMOUNT = 100_000_000;
 
-type Props = {
-  initialData: PayrollData;
+type HariDetail = {
+  id: string;
+  tanggalShift: string;
+  absenMasuk: string | null;
+  absenKeluar: string | null;
+  totalMenitKerja: number;
+  totalMenitManual: number | null;
+  koreksiJamAlasan: string | null;
+  koreksiJamPada: string | null;
+  isPam: boolean;
 };
 
-export default function PayrollDetailClient({ initialData }: Props) {
+type Props = {
+  initialData: PayrollData;
+  rincianHari: HariDetail[];
+};
+
+function jamMenit(menit: number): string {
+  const j = Math.floor(menit / 60);
+  const m = menit % 60;
+  return m === 0 ? `${j} jam` : `${j} jam ${m} mnt`;
+}
+
+export default function PayrollDetailClient({ initialData, rincianHari }: Props) {
+  const router = useRouter();
   const [data, setData] = useState<PayrollData>(initialData);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLocking, setIsLocking] = useState(false);
+
+  // Mekanisme revisi §7.1b — hanya relevan saat payroll LOCKED.
+  const [revisiAlasan, setRevisiAlasan] = useState("");
+  const [isMerevisi, setIsMerevisi] = useState(false);
+  const [showRevisiForm, setShowRevisiForm] = useState(false);
+
+  const MIN_ALASAN_REVISI = 10;
+
+  // Koreksi jam manual (P0-7) — hanya untuk tipe JAM.
+  const [hari, setHari] = useState<HariDetail[]>(rincianHari);
+  const [koreksiUntuk, setKoreksiUntuk] = useState<string | null>(null);
+  const [presetJam, setPresetJam] = useState("8");
+  const [koreksiAlasan, setKoreksiAlasan] = useState("");
+  const [isMengoreksi, setIsMengoreksi] = useState(false);
+  const MIN_ALASAN_KOREKSI = 5;
+
+  const tarif = data.employee.tarifPerJam ?? 0;
+  const isTipeJam = data.employee.tipePerhitunganGaji === "JAM";
+
+  const bukaKoreksi = (h: HariDetail) => {
+    setKoreksiUntuk(h.id);
+    // Preset awal = pembulatan ke atas ke jam penuh terdekat.
+    const menitEfek = h.totalMenitManual ?? h.totalMenitKerja;
+    setPresetJam(String(Math.max(1, Math.round(menitEfek / 60))));
+    setKoreksiAlasan("");
+  };
+
+  const kirimKoreksi = async (reset: boolean) => {
+    if (!koreksiUntuk) return;
+    if (koreksiAlasan.trim().length < MIN_ALASAN_KOREKSI) {
+      toast.error(`Alasan wajib diisi, minimal ${MIN_ALASAN_KOREKSI} karakter.`);
+      return;
+    }
+    const target = hari.find((h) => h.id === koreksiUntuk);
+    if (!target) return;
+
+    const totalMenitManual = reset ? null : Number(presetJam) * 60;
+    if (!reset && (!Number.isInteger(Number(presetJam)) || Number(presetJam) < 0 || Number(presetJam) > 24)) {
+      toast.error("Jam harus 0-24.");
+      return;
+    }
+
+    const sebelumJam = Math.floor((target.totalMenitManual ?? target.totalMenitKerja) / 60);
+    const sesudahJam = reset
+      ? Math.floor(target.totalMenitKerja / 60)
+      : Number(presetJam);
+    const deltaRupiah = (sesudahJam - sebelumJam) * tarif;
+
+    const pesan = reset
+      ? `Batalkan koreksi hari ${target.tanggalShift}? Kembali ke ${jamMenit(target.totalMenitKerja)}.`
+      : `Koreksi ${target.tanggalShift} menjadi ${presetJam} jam?\n` +
+        `Dampak: ${deltaRupiah >= 0 ? "+" : ""}${formatRupiah(deltaRupiah)} pada payroll ini.`;
+    if (!window.confirm(pesan)) return;
+
+    setIsMengoreksi(true);
+    try {
+      const res = await fetch(`/api/absensi/${koreksiUntuk}/koreksi-jam`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ totalMenitManual, alasan: koreksiAlasan.trim() }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(json.error || `Gagal (HTTP ${res.status})`);
+        return;
+      }
+      setHari((prev) =>
+        prev.map((h) =>
+          h.id === koreksiUntuk
+            ? {
+                ...h,
+                totalMenitManual: json.totalMenitManual ?? null,
+                koreksiJamAlasan: koreksiAlasan.trim(),
+                koreksiJamPada: new Date().toISOString(),
+              }
+            : h
+        )
+      );
+      toast.success(
+        `Jam ${target.tanggalShift} dikoreksi menjadi ${json.jamDibayar} jam.`
+      );
+      setKoreksiUntuk(null);
+      setKoreksiAlasan("");
+      router.refresh();
+    } catch {
+      toast.error("Terjadi kesalahan jaringan.");
+    } finally {
+      setIsMengoreksi(false);
+    }
+  };
+
+  const kirimRevisi = async () => {
+    if (revisiAlasan.trim().length < MIN_ALASAN_REVISI) {
+      toast.error(`Alasan revisi wajib diisi, minimal ${MIN_ALASAN_REVISI} karakter.`);
+      return;
+    }
+    if (
+      !window.confirm(
+        `Buka payroll ini untuk revisi?\n\nAlasan: ${revisiAlasan.trim()}\n\n` +
+          "Setelah dibuka, Anda bisa mengubah field dan mengunci lagi. Jejak revisi akan tercatat."
+      )
+    ) {
+      return;
+    }
+
+    setIsMerevisi(true);
+    try {
+      const res = await fetch(`/api/payroll/${data.id}/revise`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ alasan: revisiAlasan.trim() }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(json.error || `Gagal (HTTP ${res.status})`);
+        return;
+      }
+      toast.success(`Payroll dibuka untuk revisi (ke-${json.revisiKe}).`);
+      setRevisiAlasan("");
+      setShowRevisiForm(false);
+      const fresh = await fetch(`/api/payroll/${data.id}`, { cache: "no-store" });
+      if (fresh.ok) setData(await fresh.json());
+      router.refresh();
+    } catch {
+      toast.error("Terjadi kesalahan jaringan.");
+    } finally {
+      setIsMerevisi(false);
+    }
+  };
 
   const [bonusManual, setBonusManual] = useState(String(data.bonusManual));
   const [potonganManual, setPotonganManual] = useState(String(data.potonganManual));
@@ -240,6 +392,176 @@ export default function PayrollDetailClient({ initialData }: Props) {
         </CardContent>
       </Card>
 
+      {/* Rincian Per Hari — hanya tipe JAM (koreksi jam, §7.1a) */}
+      {isTipeJam && hari.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Rincian Per Hari</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Jam dibayar = floor(menit per hari). Bulatkan di sini kalau
+              catatan absensi tidak bulat, misalnya 7 jam 50 menit -&gt; 8 jam.
+              {isLocked && " Payroll sedang terkunci — buka revisi dulu."}
+            </p>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="py-2 pr-3 font-medium">Tanggal</th>
+                    <th className="py-2 pr-3 font-medium">Jam server</th>
+                    <th className="py-2 pr-3 font-medium">Jam dibayar</th>
+                    <th className="py-2 pr-3 font-medium">Sumber</th>
+                    <th className="py-2 font-medium">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hari.map((h) => {
+                    const terkoreksi = h.totalMenitManual !== null;
+                    const jamDibayar = Math.floor(
+                      (h.totalMenitManual ?? h.totalMenitKerja) / 60
+                    );
+                    const terbuka = koreksiUntuk === h.id;
+                    return (
+                      <tr
+                        key={h.id}
+                        className={`border-b last:border-0 ${
+                          terkoreksi ? "bg-amber-50 dark:bg-amber-950/30" : ""
+                        }`}
+                      >
+                        <td className="py-2 pr-3 font-mono text-xs">
+                          {h.tanggalShift}
+                          {h.isPam && (
+                            <span className="ml-1 rounded bg-purple-100 px-1 text-[10px] text-purple-800 dark:bg-purple-900 dark:text-purple-200">
+                              PAM
+                            </span>
+                          )}
+                        </td>
+                        <td
+                          className={`py-2 pr-3 ${terkoreksi ? "text-muted-foreground line-through" : ""}`}
+                        >
+                          {jamMenit(h.totalMenitKerja)}
+                        </td>
+                        <td className="py-2 pr-3 font-medium">
+                          {jamDibayar} jam
+                        </td>
+                        <td className="py-2 pr-3 text-xs">
+                          {terkoreksi ? (
+                            <span
+                              className="text-amber-700 dark:text-amber-300"
+                              title={h.koreksiJamAlasan ?? undefined}
+                            >
+                              koreksi manual
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">otomatis</span>
+                          )}
+                        </td>
+                        <td className="py-2">
+                          {terbuka ? (
+                            <div className="space-y-2">
+                              <div className="flex flex-wrap items-center gap-1">
+                                {["7", "8", "9", "10"].map((p) => (
+                                  <button
+                                    key={p}
+                                    type="button"
+                                    onClick={() => setPresetJam(p)}
+                                    disabled={isMengoreksi}
+                                    className={`rounded border px-2 py-0.5 text-xs ${
+                                      presetJam === p
+                                        ? "border-primary bg-primary text-primary-foreground"
+                                        : "border-input hover:bg-accent"
+                                    }`}
+                                  >
+                                    {p} jam
+                                  </button>
+                                ))}
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={24}
+                                  value={presetJam}
+                                  onChange={(e) => setPresetJam(e.target.value)}
+                                  disabled={isMengoreksi}
+                                  className="w-16 rounded border border-input bg-background px-2 py-0.5 text-xs"
+                                  aria-label="Jam kustom"
+                                />
+                              </div>
+                              <input
+                                type="text"
+                                placeholder={`Alasan (min ${MIN_ALASAN_KOREKSI} karakter)`}
+                                value={koreksiAlasan}
+                                onChange={(e) => setKoreksiAlasan(e.target.value)}
+                                disabled={isMengoreksi}
+                                className="w-full rounded border border-input bg-background px-2 py-1 text-xs"
+                              />
+                              <p className="text-[11px] text-muted-foreground">
+                                Dampak:{" "}
+                                {(() => {
+                                  const sebelum = Math.floor(
+                                    (h.totalMenitManual ?? h.totalMenitKerja) / 60
+                                  );
+                                  const d = (Number(presetJam) - sebelum) * tarif;
+                                  if (!Number.isFinite(d) || Number.isNaN(Number(presetJam)))
+                                    return "—";
+                                  return `${d >= 0 ? "+" : ""}${formatRupiah(d)}`;
+                                })()}
+                              </p>
+                              <div className="flex gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => kirimKoreksi(false)}
+                                  disabled={
+                                    isMengoreksi ||
+                                    isLocked ||
+                                    koreksiAlasan.trim().length < MIN_ALASAN_KOREKSI
+                                  }
+                                  className="rounded bg-primary px-2 py-1 text-xs text-primary-foreground disabled:opacity-50"
+                                >
+                                  {isMengoreksi ? "..." : "Simpan"}
+                                </button>
+                                {terkoreksi && (
+                                  <button
+                                    type="button"
+                                    onClick={() => kirimKoreksi(true)}
+                                    disabled={isMengoreksi || isLocked}
+                                    className="rounded border px-2 py-1 text-xs disabled:opacity-50"
+                                  >
+                                    Batalkan koreksi
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setKoreksiUntuk(null)}
+                                  disabled={isMengoreksi}
+                                  className="rounded px-2 py-1 text-xs text-muted-foreground"
+                                >
+                                  Tutup
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => bukaKoreksi(h)}
+                              disabled={isLocked}
+                              className="rounded border px-2 py-1 text-xs hover:bg-accent disabled:opacity-50"
+                            >
+                              {terkoreksi ? "Ubah" : "Koreksi"}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Rincian Perhitungan Otomatis */}
       <Card>
         <CardHeader>
@@ -280,8 +602,80 @@ export default function PayrollDetailClient({ initialData }: Props) {
         </CardHeader>
         <CardContent className="space-y-4">
           {isLocked && (
-            <div className="text-sm text-muted-foreground">
-              Payroll sudah di-lock pada {formatTanggalLokal(data.lockedAt)}. Tidak bisa mengubah field manual.
+            <div className="space-y-3">
+              <div className="text-sm text-muted-foreground">
+                Payroll sudah di-lock pada {formatTanggalLokal(data.lockedAt)}. Tidak
+                bisa mengubah field manual.
+              </div>
+
+              {/* Jejak revisi — payslip yang pernah dikoreksi harus terlihat
+                  bahwa angkanya sudah pernah direvisi (§7.1b). */}
+              {data.revisiKe > 0 && (
+                <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950/40">
+                  <p className="font-medium text-amber-900 dark:text-amber-200">
+                    Sudah direvisi {data.revisiKe}× — angka di payslip ini pernah
+                    dikoreksi setelah dikunci.
+                  </p>
+                  {data.revisiAlasan && (
+                    <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+                      Alasan terakhir: {data.revisiAlasan}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {!showRevisiForm ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowRevisiForm(true)}
+                  disabled={isMerevisi}
+                >
+                  Revisi Payroll (buka kunci)
+                </Button>
+              ) : (
+                <div className="space-y-2 rounded-md border p-3">
+                  <Label htmlFor="revisi-alasan">
+                    Alasan revisi (wajib, min {MIN_ALASAN_REVISI} karakter)
+                  </Label>
+                  <textarea
+                    id="revisi-alasan"
+                    placeholder="Contoh: bonus agenda terverifikasi terlambat, perlu masuk ke September."
+                    value={revisiAlasan}
+                    onChange={(e) => setRevisiAlasan(e.target.value)}
+                    disabled={isMerevisi}
+                    rows={3}
+                    className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      onClick={kirimRevisi}
+                      disabled={
+                        isMerevisi ||
+                        revisiAlasan.trim().length < MIN_ALASAN_REVISI
+                      }
+                    >
+                      {isMerevisi ? "Memproses..." : "Buka untuk Revisi"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        setShowRevisiForm(false);
+                        setRevisiAlasan("");
+                      }}
+                      disabled={isMerevisi}
+                    >
+                      Batal
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Setelah dibuka, status kembali menjadi DRAFT — Anda bisa edit
+                    field lalu mengunci lagi. Jejak revisi tercatat permanen.
+                  </p>
+                </div>
+              )}
             </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
