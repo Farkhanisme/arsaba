@@ -9,9 +9,18 @@ import { Label } from "@/components/ui/label";
 
 type Props = {
   agendaId: string;
+  /**
+   * Agenda yang ditugaskan ke karyawan harus sudah di-"Selesai" dulu sebelum
+   * boleh disetujui (lihat guard di `app/api/agenda/[id]/verify/route.ts`).
+   *
+   * Saat `false`, tombol Setujui disembunyikan — bukan hanya disabled — karena
+   *tombol yang selalu gagal itu membingungkan. Menolak tetap bisa: penolakan
+   * berarti tugas dibatalkan, bukan "selesai tapi tidak ganzen".
+   */
+  allowApprove?: boolean;
 };
 
-export function VerifyForm({ agendaId }: Props) {
+export function VerifyForm({ agendaId, allowApprove = true }: Props) {
   const router = useRouter();
   const [mode, setMode] = useState<"idle" | "reject">("idle");
   const [reason, setReason] = useState("");
@@ -55,13 +64,15 @@ export function VerifyForm({ agendaId }: Props) {
 
       {mode === "idle" && (
         <div className="flex gap-2 border-t pt-4">
-          <Button
-            type="button"
-            disabled={isSubmitting}
-            onClick={() => kirim("approve")}
-          >
-            {isSubmitting ? "Mengirim..." : "Setujui"}
-          </Button>
+          {allowApprove && (
+            <Button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => kirim("approve")}
+            >
+              {isSubmitting ? "Mengirim..." : "Setujui"}
+            </Button>
+          )}
           <Button
             type="button"
             variant="destructive"

@@ -84,16 +84,29 @@ export default async function VerifikasiAgendaPage() {
                   Sumber: {a.sumber} · Nominal:{" "}
                   {a.nominal === null ? "belum ditetapkan" : formatRupiah(a.nominal)}
                 </p>
-                <p className="text-muted-foreground">
-                  Diselesaikan: {formatTanggalWIB(a.diselesaikanPada)}
-                  {a.buktiBeforeFileId && a.buktiAfterFileId
-                    ? " · ada bukti before + after"
-                    : a.buktiBeforeFileId
-                    ? " · ada bukti before"
-                    : a.buktiAfterFileId
-                    ? " · ada bukti after"
-                    : " · tanpa bukti"}
-                </p>
+                {a.diselesaikanPada === null ? (
+                  // Menonjol, karena `PATCH /api/agenda/[id]/verify` akan
+                  // menolak dengan 409 kalau agenda ini disetujui sekarang.
+                  // Alasannya: `selesai` hanya menerima status PENDING, jadi
+                  // kalau disetujui duluan, `diselesaikanPada` tidak akan pernah
+                  // bisa diisi — dan `payroll/generate` hanya menghitung agenda
+                  // yang sudah selesai, jadi bonus-nya hilang permanen.
+                  <p className="font-medium text-amber-700 dark:text-amber-300">
+                    Belum selesai — tidak bisa disetujui. Tunggu karyawan
+                    menekan "Selesai" dulu.
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground">
+                    Diselesaikan: {formatTanggalWIB(a.diselesaikanPada)}
+                    {a.buktiBeforeFileId && a.buktiAfterFileId
+                      ? " · ada bukti before + after"
+                      : a.buktiBeforeFileId
+                      ? " · ada bukti before"
+                      : a.buktiAfterFileId
+                      ? " · ada bukti after"
+                      : " · tanpa bukti"}
+                  </p>
+                )}
               </CardContent>
             </Card>
           </Link>

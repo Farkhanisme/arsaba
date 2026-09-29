@@ -81,6 +81,44 @@ export async function PATCH(
       );
     }
 
+    // ------------------------------------------------------------
+    // WAJIB: agenda yang ditugaskan ke karyawan harus SUDAH selesai
+    // sebelum bisa disetujui.
+    //
+    // Alasannya (P0-2 — bonus hilang permanen):
+    //
+    //   1. `POST /api/agenda/[id]/selesai` hanya menerima status
+    //      PENDING_VERIFIKASI. Kalau supervisor menyetujui duluan, status
+    //      berubah dan karyawan tidak PERNAH bisa menandai selesai lagi.
+    //   2. `payroll/generate` hanya menghitung agenda dengan
+    //      `diselesaikanPada` terisi. Agenda tanpa itu tidak masuk gaji — di
+    //      bulan mana pun, selamanya.
+    //   3. Tidak ada endpoint untuk mengisi `diselesaikanPada` belakangan, dan
+    //      tidak ada revisi untuk Agenda.
+    //
+    //   Hasilnya: Manager sudah set nominal, payslip menampilkan
+    //   "Bonus Agenda Rp 500.000", tapi uang itu tidak pernah dibayar. Tanpa
+    //   warning, tanpa audit, tanpa jalan keluar.
+    //
+    // Cakupannya HANYA `targetEmployeeId !== null`:
+    //   - Template master (`targetEmployeeId` null) tidak punya konsep selesai;
+    //     yang "diselesaikan" adalah ASSIGNMENT-nya, dan itu dicek terpisah.
+    //   - Assignment ke toko (`targetStoreId`) juga tidak punya karyawan yang
+    //     menekan Selesai, dan tidak memengaruhi gaji karena `payroll/generate`
+    //     hanya menghitung `targetEmployeeId`.
+    //   Kalau keduanya ikut diblokir, alur yang tidak bermasalah ikut mati.
+    // ------------------------------------------------------------
+    if (action === "approve" && agenda.targetEmployeeId !== null && agenda.diselesaikanPada === null) {
+      return NextResponse.json(
+        {
+          error:
+            "Agenda ini belum ditandai selesai oleh karyawan, jadi belum bisa disetujui. " +
+            "Tunggu karyawan menekan \"Selesai\" dulu — kalau tidak, bonus-nya tidak akan masuk gaji.",
+        },
+        { status: 409 }
+      );
+    }
+
     const now = new Date();
 
     const nilaiSebelum = {

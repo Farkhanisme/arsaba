@@ -53,6 +53,12 @@ export default async function VerifikasiAgendaDetailPage({
   if (!agenda) notFound();
 
   const isFinal = agenda.status !== "PENDING_VERIFIKASI";
+  // Hanya agenda yang DITUGASKAN ke karyawan yang punya konsep "Selesai".
+  // Template master dan assignment ke toko tidak — keduanya tidak punya
+  // karyawan yang menekan tombol itu, dan tidak memengaruhi gaji karena
+  // `payroll/generate` hanya menghitung `targetEmployeeId`.
+  const belumSelesai =
+    agenda.targetEmployeeId !== null && agenda.diselesaikanPada === null;
 
   return (
     <div className="space-y-6">
@@ -85,7 +91,14 @@ export default async function VerifikasiAgendaDetailPage({
     : formatRupiah(agenda.nominal)}
 </p>
           <p>Deadline: {formatTanggalWIB(agenda.deadline)}</p>
-          <p>Diselesaikan: {formatTanggalWIB(agenda.diselesaikanPada)}</p>
+          {agenda.diselesaikanPada === null ? (
+            <p className="font-medium text-amber-700 dark:text-amber-300">
+              Belum selesai — tidak bisa disetujui. Tunggu karyawan menekan
+              "Selesai" dulu, kalau tidak bonus-nya tidak akan masuk gaji.
+            </p>
+          ) : (
+            <p>Diselesaikan: {formatTanggalWIB(agenda.diselesaikanPada)}</p>
+          )}
           <p>Status: {agenda.status}</p>
           {agenda.verifiedBy && agenda.verifiedAt && (
             <p className="text-muted-foreground">
@@ -131,7 +144,23 @@ export default async function VerifikasiAgendaDetailPage({
         </CardContent>
       </Card>
 
-      {!isFinal && (
+      {!isFinal && belumSelesai && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Verifikasi</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              Menolak tetap bisa dilakukan (mis. tugas ini memang dibatalkan),
+              tapi menyetujui belum bisa — agenda harus dinyatakan selesai
+              karyawan lebih dulu.
+            </p>
+            <VerifyForm agendaId={agenda.id} allowApprove={false} />
+          </CardContent>
+        </Card>
+      )}
+
+      {!isFinal && !belumSelesai && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Verifikasi</CardTitle>
