@@ -359,6 +359,79 @@ async function main() {
       "halaman menampilkan informasi revisi",
       html.length
     );
+
+    // ============================================================
+    // [9] REGRESI: DAFTAR payroll benar-benar merender data
+    // ============================================================
+    // Halaman `/manajer/payroll` (versi daftar) punya bug yang sama seperti
+    // payslip detail: Server Component yang memanggil API-nya sendiri lewat
+    // `fetch("/api/payroll?...")`. Fetch relatif tidak punya base URL di Server
+    // Component, jadi request-nya tidak pernah sampai, `catch {}` menelan
+    // errornya, dan halaman SELALU menampilkan "Daftar Payroll (0)".
+    //
+    // Yang diuji: jumlah baris payslip yang dirender HARUS sama dengan jumlah
+    // yang dikembalikan `GET /api/payroll` untuk filter yang sama. Kalau
+    // keduanya menyimpang, salah satu dari dua pintu itu salah.
+    console.log("\n[9] Halaman daftar payroll merender data");
+    const cekDaftar = async (
+      label: string,
+      qs: string
+    ): Promise<{ ok: boolean; baris: number; api: number }> => {
+      const halamanDaftar = await fetch(`${BASE}/manajer/payroll${qs}`, {
+        headers: { cookie: jar },
+      });
+      const htmlDaftar = await halamanDaftar.text();
+      // Hanya href detail payslip (cuid), bukan link lain di halaman.
+      const ids = new Set(
+        (htmlDaftar.match(/href="\/manajer\/payroll\/[a-z0-9]{20,}"/g) ?? []).map(
+          (m) => m.match(/payroll\/([a-z0-9]+)"/)![1]
+        )
+      );
+      const baris = ids.size;
+      const apiJson = (await (
+        await fetch(`${BASE}/api/payroll${qs}`, { headers: { cookie: jar } })
+      ).json()) as { total?: number };
+      const api = apiJson.total ?? -1;
+      const kosongState = htmlDaftar.includes("Belum ada payroll");
+      const ok =
+        halamanDaftar.status === 200 &&
+        api >= 0 &&
+        baris === api &&
+        kosongState === (api === 0);
+      console.log(`   ${ok ? "✅" : "❌"} ${label} — baris=${baris} api=${api}`);
+      return { ok, baris, api };
+    };
+
+    const tanpa = await cekDaftar("(tanpa filter)", "");
+    assert(
+      tanpa.ok && tanpa.baris > 0,
+      `daftar tanpa filter merender ${tanpa.baris} baris (bukan 0)`,
+      tanpa
+    );
+
+    const draf = await cekDaftar("status=DRAFT", "?periode=2026-09&status=DRAFT");
+    assert(draf.ok, "daftar terfilter DRAFT cocok dengan API", draf);
+
+    // Periode tanpa data harus menampilkan empty state, bukan error.
+    const kosong = await cekDaftar("periode tanpa data", "?periode=2020-01");
+    assert(
+      kosong.ok && kosong.baris === 0,
+      "periode tanpa data -> 0 baris + empty state",
+      kosong
+    );
+
+    // Param ngawur harus aman: API menolak dengan 400, tapi halaman tetap
+    // merender (param diabaikan, bukan di-query). Kalau halaman ikut error,
+    // `space-y-6` + heading akan hilang.
+    const ngawur = await fetch(`${BASE}/manajer/payroll?periode=abc&status=nonsense`, {
+      headers: { cookie: jar },
+    });
+    const htmlNgawur = await ngawur.text();
+    assert(
+      ngawur.status === 200 && htmlNgawur.includes("Kelola Payroll Bulanan"),
+      "param ngawur -> halaman tetap 200 dan lengkap",
+      ngawur.status
+    );
   } catch (e) {
     console.error("\n💥 Gagal:", e instanceof Error ? e.message : e);
     process.exitCode = 1;
