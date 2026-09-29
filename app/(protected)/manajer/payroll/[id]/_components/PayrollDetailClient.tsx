@@ -76,6 +76,7 @@ type HariDetail = {
 type Props = {
   initialData: PayrollData;
   rincianHari: HariDetail[];
+  belumTerverifikasi: { jumlah: number; tanggal: string[] };
 };
 
 function jamMenit(menit: number): string {
@@ -84,7 +85,11 @@ function jamMenit(menit: number): string {
   return m === 0 ? `${j} jam` : `${j} jam ${m} mnt`;
 }
 
-export default function PayrollDetailClient({ initialData, rincianHari }: Props) {
+export default function PayrollDetailClient({
+  initialData,
+  rincianHari,
+  belumTerverifikasi,
+}: Props) {
   const router = useRouter();
   const [data, setData] = useState<PayrollData>(initialData);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -281,6 +286,14 @@ export default function PayrollDetailClient({ initialData, rincianHari }: Props)
   };
 
   const handleLock = async () => {
+    // Server juga menolak (409) kalau masih ada absensi yang belum
+    // diverifikasi. Penjaga di sini supaya tidak perlu klik dulu untuk tahu.
+    if (belumTerverifikasi.jumlah > 0) {
+      toast.error(
+        `Masih ada ${belumTerverifikasi.jumlah} absensi yang belum diverifikasi.`
+      );
+      return;
+    }
     if (!window.confirm("Setelah di-lock, payroll tidak bisa diubah lagi. Lanjutkan?")) {
       return;
     }
@@ -761,6 +774,24 @@ export default function PayrollDetailClient({ initialData, rincianHari }: Props)
               <p className="text-sm text-muted-foreground">
                 Di-lock pada: {formatTanggalLokal(data.lockedAt)}
               </p>
+            </div>
+          ) : belumTerverifikasi.jumlah > 0 ? (
+            // Blocker: hari kerja ini belum dihitung gaji karena absensinya
+            // belum diverifikasi. Menit alphanumeric lock di sini supaya tidak
+            // ada payslip yang terkunci sambil kehilangan hari kerja.
+            <div className="space-y-2">
+              <Button variant="destructive" disabled>
+                Lock Payroll (Finalisasi)
+              </Button>
+              <p className="text-sm text-amber-700 dark:text-amber-300">
+                Tidak bisa dikunci: ada {belumTerverifikasi.jumlah} absensi yang
+                belum diverifikasi ({belumTerverifikasi.tanggal.join(", ")}).
+                Hari-hari itu tidak masuk hitungan gaji, jadi payslip ini akan
+                kehilangan hari kerja.
+              </p>
+              <Button variant="outline" asChild>
+                <a href="/verifikasi/absensi">Buka antrean verifikasi</a>
+              </Button>
             </div>
           ) : (
             <Button variant="destructive" onClick={handleLock} disabled={isLocking}>

@@ -26,7 +26,7 @@
 //
 // lib/absensi.ts tetap satu-satunya tempat untuk konstanta & helper waktu WIB.
 
-import type { TipePerhitunganGaji } from "@prisma/client";
+import type { Prisma, TipePerhitunganGaji } from "@prisma/client";
 
 /** Batas atas nominal (Rp). Sama dengan NOMINAL_MAX di API user/[id]/gaji. */
 export const NOMINAL_MAX = 100_000_000;
@@ -175,11 +175,74 @@ export function pesanPayrollLocked(tanggalShift: Date): string {
 }
 
 // ============================================================
-// Koreksi jam manual (P0-7, spesifikasi §7.1a)
+// Antrean verifikasi yang belum tuntas (Opsi B)
 // ============================================================
 
-/** Batas fisik menit kerja dalam sehari. */
-// (didefinisikan di atas)
+/** Bentuk minimal PrismaClient untuk membaca antrean verifikasi absensi. */
+type AttendanceClientLike = {
+  attendance: {
+    findMany: (
+      args: Prisma.AttendanceFindManyArgs
+    ) => Promise<AbsensiMenungguVerifikasi[]>;
+  };
+};
+
+export type AbsensiMenungguVerifikasi = { id: string; tanggalShift: Date };
+
+/**
+ * Absensi pada (employee, periode) yang masih `PENDING_VERIFIKASI` — artinya
+ * hari itu **belum masuk hitungan gaji** sampai ada yang memverifikasinya.
+ *
+ *_aturan ini menutup lubang "hari kerja hilang tanpa suara": sebelumnya payslip
+ * bisa dikunci sambil diam-diam melewati hari yang sudah orang kerjakan, karena
+ * `payroll/generate` hanya menghitung `statusMasuk: "DIVERIFIKASI"`.
+ *
+ * PENTING — hanya `statusMasuk` yang diperiksa:
+ *   - `statusKeluar` yang masih pending **tidak boleh memblokir**. Perhitungan
+ *     gaji tidak memfilter `statusKeluar` sama sekali, jadi record seperti itu
+ *     sudah terbayar dan tidak mengubah apa pun. Memasukkannya akan mengunci
+ *     payslip tanpa jalan keluar, karena status itu hanya bisa ditutup lewat
+ *     log KELUAR.
+ *   - `DITOLAK` juga tidak memblokir. Penolakan adalah keputusan sadar, sama
+ *     dengan "sudah diselesaikan" — bukan pekerjaan yang tertinggal.
+ */
+export async function absensiMenungguVerifikasi(
+  client: AttendanceClientLike,
+  employeeId: string,
+  periode: Date
+): Promise<AbsensiMenungguVerifikasi[]> {
+  if (!employeeId) return [];
+  const tahun = periode.getUTCFullYear();
+  const bulan = periode.getUTCMonth();
+  return client.attendance.findMany({
+    where: {
+      employeeId,
+      tanggalShift: { gte: new Date(Date.UTC(tahun, bulan, 1)), lt: new Date(Date.UTC(tahun, bulan + 1, 1)) },
+      statusMasuk: "PENDING_VERIFIKASI",
+    },
+    select: { id: true, tanggalShift: true },
+    orderBy: { tanggalShift: "asc" },
+  });
+}
+
+/** Pesan 409 + tujuan perbaikan untuk antrean verifikasi yang belum tuntas. */
+export function pesanAbsensiMenungguVerifikasi(
+  rows: AbsensiMenungguVerifikasi[],
+  employeeName?: string
+): string {
+  const n = rows.length;
+  const tanggal = rows.map((r) => r.tanggalShift.toISOString().slice(0, 10)).join(", ");
+  const siapa = employeeName ? ` untuk ${employeeName}` : "";
+  return (
+    `Ada ${n} absensi${siapa} yang belum diverifikasi pada ${tanggal}. ` +
+    `Hari-hari itu tidak dihitung dalam gaji, jadi payslip ini akan kehilangan hari kerja. ` +
+    `Verifikasi atau tolak absensi tersebut di /verifikasi/absensi sebelum mengunci.`
+  );
+}
+
+// ============================================================
+// Koreksi jam manual (P0-7, spesifikasi §7.1a)
+// ============================================================
 
 /**
  * Menit yang boleh dibayar untuk satu record Attendance.

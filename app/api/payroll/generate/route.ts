@@ -468,6 +468,35 @@ export async function POST(request: NextRequest) {
     // Ini yang harus direvisi lewat POST /api/payroll/[id]/revise.
     const perluRevisi = results.filter((r) => r.perluRevisi);
 
+    // Absensi yang masih PENDING_VERIFIKASI = hari kerja yang TIDAK masuk
+    // angka di atas. Disampaikan di sini supaya ketahuan sebelum Manajer
+    // mencoba lock, bukan baru ditolak saat itu juga.
+    //
+    // Query terpisah (bukan join ke dalam transaksi) supaya tidak menambah
+    // query per karyawan, dan supaya tidak mengunci baris payroll lebih lama
+    // dari yang perlu.
+    const tertunda = await prisma.attendance.findMany({
+      where: {
+        employeeId: { in: karyawanList.map((k) => k.id) },
+        tanggalShift: { gte: awalBulan, lt: akhirBulan },
+        statusMasuk: "PENDING_VERIFIKASI",
+      },
+      select: { employeeId: true, tanggalShift: true },
+      orderBy: { tanggalShift: "asc" },
+    });
+    const belumTerverifikasi = [...new Set(tertunda.map((t) => t.employeeId))].map(
+      (employeeId) => {
+        const milik = tertunda.filter((t) => t.employeeId === employeeId);
+        const karyawan = karyawanList.find((k) => k.id === employeeId);
+        return {
+          employeeId,
+          employeeNama: karyawan?.nama ?? null,
+          jumlah: milik.length,
+          tanggal: milik.map((m) => m.tanggalShift.toISOString().slice(0, 10)),
+        };
+      }
+    );
+
     return NextResponse.json({
       periode,
       totalKaryawan: karyawanList.length,
@@ -476,6 +505,8 @@ export async function POST(request: NextRequest) {
       totalSkipped,
       totalPerluRevisi: perluRevisi.length,
       perluRevisi,
+      totalBelumTerverifikasi: belumTerverifikasi.length,
+      belumTerverifikasi,
       items: results,
     });
   } catch (err) {

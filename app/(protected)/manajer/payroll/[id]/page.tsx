@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { payrollInclude, petakanPayroll, type PayrollView } from "@/lib/payroll-view";
+import { absensiMenungguVerifikasi } from "@/lib/gaji";
 import { redirect } from "next/navigation";
 import type { Role } from "@prisma/client";
 import PayrollDetailClient from "./_components/PayrollDetailClient";
@@ -108,5 +109,39 @@ export default async function ManajerPayrollDetailPage({
     }
   }
 
-  return <PayrollDetailClient initialData={payrollData} rincianHari={rincianHari} />;
+  // Absensi yang masih PENDING_VERIFIKASI = hari kerja yang TIDAK masuk gaji.
+  // `POST /api/payroll/[id]/lock` akan menolak (409) selama ini masih ada, jadi
+  // dikirim ke sini supaya tombolnya langsung nonaktif dengan alasannya — bukan
+  // baru ketahuan setelah klik gagal.
+  //
+  // Hanya `statusMasuk` yang dibaca. `statusKeluar` yang pending tidak
+  // berpengaruh ke perhitungan gaji sama sekali, jadi tidak boleh memblokir.
+  //
+  // Catatan: `PayrollView.periode` sudah berupa string ISO, sedangkan helper
+  // ini menerima Date — jadi dikonversi dulu di sini.
+  let belumTerverifikasi: { jumlah: number; tanggal: string[] } = { jumlah: 0, tanggal: [] };
+  try {
+    const periodeDate = new Date(payrollData.periode);
+    const rows = await absensiMenungguVerifikasi(
+      prisma,
+      payrollData.employeeId,
+      periodeDate
+    );
+    belumTerverifikasi = {
+      jumlah: rows.length,
+      tanggal: rows.map((r) => r.tanggalShift.toISOString().slice(0, 10)),
+    };
+  } catch {
+    // Gagal membaca tidak boleh menutup halaman. Lock route tetap otoritatif
+    // terakhir — dia yang menolak kalau memang masih ada yang tertinggal.
+    belumTerverifikasi = { jumlah: 0, tanggal: [] };
+  }
+
+  return (
+    <PayrollDetailClient
+      initialData={payrollData}
+      rincianHari={rincianHari}
+      belumTerverifikasi={belumTerverifikasi}
+    />
+  );
 }

@@ -403,6 +403,11 @@ Kepala Toko hanya melihat transaksi yang melibatkan tokonya (sebagai pengirim at
   - tipe `BULANAN` → **tidak terpengaruh**, nominal tetap dibayar penuh.
   - Konsekuensi yang diterima: karyawan `HARIAN`/`JAM` tidak punya jaminan pendapatan bulanan (sakit 2 minggu = 2 minggu tidak dibayar). Kalau nanti dibutuhkan, penanganannya adalah model **tunjangan sakit / THR terpisah**, **bukan** mengubah aturan ini.
   - Catatan konsekuensi: jangan memakai `potonganManual` untuk "mengganti" hari izin — itu pengurangan, bukan penambahan.
+- **Antrean verifikasi wajib bersih sebelum payroll dikunci.** Karena hanya `statusMasuk = "DIVERIFIKASI"` yang dihitung, absensi yang masih `PENDING_VERIFIKASI` berarti hari itu **tidak masuk gaji**. Tanpa pengaman, Manajer bisa mengunci payslip yang kehilangan hari kerja tanpa apa-apa yang memberi tahu.
+  - `PATCH /api/payroll/[id]/lock` **menolak (409)** selama masih ada absensi `PENDING_VERIFIKASI` pada (karyawan, periode) itu. Pesan 409 menyebutkan jumlah dan tanggalnya, plus link ke `/verifikasi/absensi`.
+  - Yang **tidak boleh** memblokir: `statusKeluar` yang masih pending (perhitungan gaji tidak memfilter `statusKeluar` sama sekali, jadi record itu sudah terbayar —memasukkannya akan mengunci payslip tanpa jalan keluar) dan status `DITOLAK` (penolakan adalah keputusan sadar, sama dengan "sudah diselesaikan").
+  - `POST /api/payroll/generate` melaporkan `belumTerverifikasi` (per karyawan: jumlah + tanggal) supaya ketahuan lebih awal, sebelum lock dicoba.
+  - **Rumus gaji tidak berubah karena aturan ini** — ini murni menutup lubang "hari kerja hilang tanpa suara".
 - Setiap jobdesk/agenda yang diselesaikan (dan sudah lolos verifikasi) menambah nominal ke gaji sesuai nominal yang diatur per agenda/jobdesk.
 - Potongan keterlambatan (§5.1) otomatis dikurangkan.
 - **Bonus dan potongan tambahan diinput manual oleh manajer**, berdasarkan data absensi dan agenda yang sudah terverifikasi — sistem menyediakan rekomendasi/rincian otomatis (total telat, total agenda selesai, dll), tapi keputusan akhir nominal tetap di tangan manajer sebelum payroll di-lock per bulan.

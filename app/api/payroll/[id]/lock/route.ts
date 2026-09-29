@@ -1,5 +1,9 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import {
+  absensiMenungguVerifikasi,
+  pesanAbsensiMenungguVerifikasi,
+} from "@/lib/gaji";
 import { NextRequest, NextResponse } from "next/server";
 
 const ALLOWED_ROLES = ["MANAJER"];
@@ -30,6 +34,32 @@ export async function PATCH(
 
     if (existing.status === "LOCKED") {
       return NextResponse.json({ error: "Payroll sudah di-lock sebelumnya." }, { status: 409 });
+    }
+
+    // Cegah payslip dikunci sementara masih ada absensi yang belum diverifikasi.
+    //
+    // `payroll/generate` hanya menghitung `statusMasuk: "DIVERIFIKASI"`, jadi
+    // absensi yang masih PENDING berarti hari itu TIDAK masuk gaji. Tanpa guard
+    // ini, Manajer bisa mengunci payslip yang diam-diam kehilangan hari kerja —
+    // masalah yang sama dengan bonus agenda hilang senyap, tapi untuk absensi.
+    //
+    // Resolve selalu ada: setiap record bisa diverifikasi ATAU ditolak, dan
+    // penolakan juga melepas diri dari blokir ini.
+    const menunggu = await absensiMenungguVerifikasi(
+      prisma,
+      existing.employeeId,
+      existing.periode
+    );
+    if (menunggu.length > 0) {
+      return NextResponse.json(
+        {
+          error: pesanAbsensiMenungguVerifikasi(menunggu, existing.employeeId),
+          belumTerverifikasi: menunggu.length,
+          tanggal: menunggu.map((m) => m.tanggalShift.toISOString().slice(0, 10)),
+          href: "/verifikasi/absensi",
+        },
+        { status: 409 }
+      );
     }
 
     const now = new Date();
