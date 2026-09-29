@@ -19,6 +19,10 @@
     "uji:agenda:http": "tsx --env-file=.env scripts/uji-agenda-http.ts",
     "uji:payroll:http": "tsx --env-file=.env scripts/uji-payroll-http.ts",
     "uji:jam:http": "tsx --env-file=.env scripts/uji-jam-http.ts",
+    "uji:lock:http": "tsx --env-file=.env scripts/uji-lock-http.ts",
+    "uji:setoran:dup": "tsx --env-file=.env scripts/uji-setoran-duplikat.ts",
+    "uji:agenda:selesai": "tsx --env-file=.env scripts/uji-agenda-selesai.ts",
+    "uji:override:keluar": "tsx --env-file=.env scripts/uji-override-keluar.ts",
     "uji:promoql": "tsx --env-file=.env scripts/uji-promoql.ts"
   },
   "prisma": {
