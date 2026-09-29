@@ -567,6 +567,24 @@ model SetoranUang {
   disetorkanOlehId String
   disetorkanPada   DateTime // WIB
 
+  // Bucket menit = date_trunc('minute', disetorkanPada), diisi oleh TRIGGER
+  // database (lihat migration 20260930120000_setoran_anti_duplikat).
+  //
+  // `@ignore` itu disengaja, bukan sisa.:
+  //   - Kolom ini TIDAK muncul di Prisma Client, jadi aplikasi secara fisik
+  //     tidak bisa mengirimnya. inilah yang membuat unique index benar-benar
+  //     tidak bisa dilewati dari sisi client.
+  //   - TypeScript juga tidak menuntut field ini di setiap `create`.
+  //   - `prisma migrate diff` tetap melaporkan "empty migration", jadi tidak ada
+  //     drift walau kolom ini diabaikan Prisma.
+  //
+  // Kenapa trigger, bukan `@default`: kolom dengan DEFAULT masih bisa diisi
+  // manual dari client, jadi penjaga unique index bisa dilewati. Trigger tidak.
+  //
+  // JANGAN HAPUS `@ignore` tanpa menyelesaikan ulang strateginya — kalau kolom ini
+  // muncul di Client, anti-duplikat bisa dilewati.
+  menitBucket DateTime @ignore
+
   nominalDiterima   Int?
   selisih           Int? // diterima − disetor (dihitung server)
   keteranganSelisih String? // WAJIB bila selisih ≠ 0
@@ -589,6 +607,12 @@ model SetoranUang {
   @@index([tipeTujuan])
   @@index([status])
   @@index([disetorkanPada])
+
+  // Anti transfer ganda: satu setoran per (toko pengirim, nominal, menit).
+  // Retry beberapa detik setelah timeout, atau double-click, akan kena P2002
+  // dan ditolak — bukan terhitung dua kali di pusat.
+  @@unique([dariStoreId, nominalDisetor, menitBucket], name: "SetoranUang_dariStoreId_nominalDisetor_menitBucket_key")
+  @@index([menitBucket])
 }
 
 model BuktiSetoran {
