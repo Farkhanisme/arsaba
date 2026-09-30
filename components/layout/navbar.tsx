@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Menu, X, LogOut } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
+import { ChangePasswordButton } from "@/components/user/change-password-button";
 import type { Role } from "@prisma/client";
 
 type Props = {
@@ -144,15 +145,18 @@ export function Navbar({ user }: Props) {
               <p className="mb-2 text-sm text-muted-foreground">
                 {user.nama ?? "-"}
               </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full"
-                onClick={() => signOut({ callbackUrl: "/login" })}
-              >
-                <LogOut className="mr-1 h-4 w-4" />
-                Keluar
-              </Button>
+              <div className="flex gap-2">
+                <ChangePasswordButton />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => signOut({ callbackUrl: "/login" })}
+                >
+                  <LogOut className="mr-1 h-4 w-4" />
+                  Keluar
+                </Button>
+              </div>
             </div>
           </aside>
         </>
