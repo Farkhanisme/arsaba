@@ -6,7 +6,11 @@ const prisma = new PrismaClient();
 // --- Data seed -------------------------------------------------------------
 // 3 toko awal dari §4.1 SPESIFIKASI_SISTEM (bukan hardcode produksi — nilai
 // awal yang memang wajib di-seed; selanjutnya dikelola lewat UI master toko).
-const TOKO_SEED = ["Arsaba Induk", "Arsaba Mart", "BGM Dieng"] as const;
+const TOKO_SEED = [
+  "Arsaba Induk", "Arsaba Mart", "Al Madad", "Beras Wangi",
+  "Mie Ayam", "Temanggung", "BGM Dieng", "Counter Dieng",
+  "Sambel Bakar", "Dapur Produksi"
+] as const;
 
 type Pii = {
   nik?: string;
@@ -179,7 +183,73 @@ async function main() {
     });
   }
 
-  // 6. Cetak daftar akun.
+  // 6. Seed ShiftTemplate untuk semua 10 toko (sesuai §4.1 spec).
+  //    Template ini adalah master shift yang akan dipakai generate ShiftInstance.
+  const SHIFT_TEMPLATE_SEED = [
+    // Arsaba Induk: Pagi 06:30-16:30, Siang 11:00-21:00
+    { store: "Arsaba Induk", nama: "Pagi", jamMulaiMenit: 390, jamSelesaiMenit: 990, lintasHari: false, hariKerja: [] },
+    { store: "Arsaba Induk", nama: "Siang", jamMulaiMenit: 660, jamSelesaiMenit: 1260, lintasHari: false, hariKerja: [] },
+    // Arsaba Mart: Pagi 05:30-17:30, Tengah 10:00-20:00, Siang 13:00-24:00, 24 Jam 18:00-06:00 (lintas)
+    { store: "Arsaba Mart", nama: "Pagi", jamMulaiMenit: 330, jamSelesaiMenit: 1050, lintasHari: false, hariKerja: [] },
+    { store: "Arsaba Mart", nama: "Tengah", jamMulaiMenit: 600, jamSelesaiMenit: 1200, lintasHari: false, hariKerja: [] },
+    { store: "Arsaba Mart", nama: "Siang", jamMulaiMenit: 780, jamSelesaiMenit: 1440, lintasHari: false, hariKerja: [] },
+    { store: "Arsaba Mart", nama: "24 Jam", jamMulaiMenit: 1080, jamSelesaiMenit: 360, lintasHari: true, hariKerja: [] },
+    // Al Madad: Pagi 06:00-16:00, Siang 10:00-20:00
+    { store: "Al Madad", nama: "Pagi", jamMulaiMenit: 360, jamSelesaiMenit: 960, lintasHari: false, hariKerja: [] },
+    { store: "Al Madad", nama: "Siang", jamMulaiMenit: 600, jamSelesaiMenit: 1200, lintasHari: false, hariKerja: [] },
+    // Beras Wangi: Pagi 06:00-17:00
+    { store: "Beras Wangi", nama: "Pagi", jamMulaiMenit: 360, jamSelesaiMenit: 1020, lintasHari: false, hariKerja: [] },
+    // Mie Ayam: Pagi 07:15-17:15, Siang 10:00-20:00
+    { store: "Mie Ayam", nama: "Pagi", jamMulaiMenit: 435, jamSelesaiMenit: 1035, lintasHari: false, hariKerja: [] },
+    { store: "Mie Ayam", nama: "Siang", jamMulaiMenit: 600, jamSelesaiMenit: 1200, lintasHari: false, hariKerja: [] },
+    // Temanggung: Pagi 05:30-13:00, Sore 17:00-21:30
+    { store: "Temanggung", nama: "Pagi", jamMulaiMenit: 330, jamSelesaiMenit: 780, lintasHari: false, hariKerja: [] },
+    { store: "Temanggung", nama: "Sore", jamMulaiMenit: 1020, jamSelesaiMenit: 1290, lintasHari: false, hariKerja: [] },
+    // BGM Dieng: Weekday (Senin-Jumat): Pagi 07:00-17:00, Siang 14:00-02:00 (lintas)
+    //               Weekend (Sabtu-Minggu): Pagi 07:00-19:00, Siang 14:00-02:00 (lintas), Malam 19:00-07:00 (lintas)
+    { store: "BGM Dieng", nama: "Pagi Weekday", jamMulaiMenit: 420, jamSelesaiMenit: 1020, lintasHari: false, hariKerja: [1, 2, 3, 4, 5] },
+    { store: "BGM Dieng", nama: "Siang Weekday", jamMulaiMenit: 840, jamSelesaiMenit: 120, lintasHari: true, hariKerja: [1, 2, 3, 4, 5] },
+    { store: "BGM Dieng", nama: "Pagi Weekend", jamMulaiMenit: 420, jamSelesaiMenit: 1140, lintasHari: false, hariKerja: [0, 6] },
+    { store: "BGM Dieng", nama: "Siang Weekend", jamMulaiMenit: 840, jamSelesaiMenit: 120, lintasHari: true, hariKerja: [0, 6] },
+    { store: "BGM Dieng", nama: "Malam Weekend", jamMulaiMenit: 1140, jamSelesaiMenit: 420, lintasHari: true, hariKerja: [0, 6] },
+    // Counter Dieng: Pagi 07:00-17:00, Sore 14:00-24:00, Malam 16:00-02:00 (lintas, overlap sengaja)
+    { store: "Counter Dieng", nama: "Pagi", jamMulaiMenit: 420, jamSelesaiMenit: 1020, lintasHari: false, hariKerja: [] },
+    { store: "Counter Dieng", nama: "Sore", jamMulaiMenit: 840, jamSelesaiMenit: 1440, lintasHari: false, hariKerja: [] },
+    { store: "Counter Dieng", nama: "Malam", jamMulaiMenit: 960, jamSelesaiMenit: 120, lintasHari: true, hariKerja: [] },
+    // Sambel Bakar: Pagi 09:00-19:00 (kepala toko fleksibel, tidak terikat shift baku)
+    { store: "Sambel Bakar", nama: "Pagi", jamMulaiMenit: 540, jamSelesaiMenit: 1140, lintasHari: false, hariKerja: [] },
+    // Dapur Produksi: tidak ada shift tetap — ad-hoc (template kosong/aktif=false sebagai penanda)
+    { store: "Dapur Produksi", nama: "Ad-hoc", jamMulaiMenit: 0, jamSelesaiMenit: 0, lintasHari: false, hariKerja: [], aktif: false },
+  ];
+
+  for (const t of SHIFT_TEMPLATE_SEED) {
+    const store = await prisma.store.findFirst({ where: { nama: t.store } });
+    if (!store) {
+      console.log(`  Template dilewati: toko ${t.store} belum ada`);
+      continue;
+    }
+    const found = await prisma.shiftTemplate.findFirst({
+      where: { storeId: store.id, nama: t.nama },
+    });
+    if (!found) {
+      await prisma.shiftTemplate.create({
+        data: {
+          storeId: store.id,
+          nama: t.nama,
+          jamMulaiMenit: t.jamMulaiMenit,
+          jamSelesaiMenit: t.jamSelesaiMenit,
+          lintasHari: t.lintasHari,
+          hariKerja: t.hariKerja ?? [],
+          aktif: t.aktif ?? true,
+        },
+      });
+      console.log(`  Template dibuat: ${store.nama} / ${t.nama}`);
+    } else {
+      console.log(`  Template sudah ada: ${store.nama} / ${t.nama}`);
+    }
+  }
+
+  // 7. Cetak daftar akun.
   console.log("\nSeed selesai. Daftar akun demo (password sama untuk semua):");
   console.log(`  Password : ${plainPassword} (WAJIB DIGANTI setelah login pertama)`);
   for (const u of USERS) {

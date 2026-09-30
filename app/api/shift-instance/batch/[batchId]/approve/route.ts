@@ -36,6 +36,11 @@ export async function PATCH(
       );
     }
 
+    const approvedIds = await prisma.shiftInstance.findMany({
+      where: { batchId, statusJadwal: "DRAFT" },
+      select: { id: true },
+    }).then((rows) => rows.map((r) => r.id));
+
     const now = new Date();
     const result = await prisma.shiftInstance.updateMany({
       where: { batchId, statusJadwal: "DRAFT" },
@@ -45,6 +50,21 @@ export async function PATCH(
         approvedAt: now,
       },
     });
+
+    // Audit log batch (Option B: createMany dengan nilai minimal per spesifikasi §8)
+    if (approvedIds.length > 0) {
+      await prisma.auditLog.createMany({
+        data: approvedIds.map((id) => ({
+          tabel: "ShiftInstance",
+          recordId: id,
+          aksi: "UPDATE",
+          nilaiSebelum: { statusJadwal: "DRAFT" },
+          nilaiSesudah: { statusJadwal: "APPROVED", approvedById: session.user.id, approvedAt: now.toISOString() },
+          actorId: session.user.id,
+          alasan: `Batch approve: ${batchId}`,
+        })),
+      });
+    }
 
     const approved = result.count;
     const skipped = total - approved;

@@ -56,6 +56,13 @@ export async function GET(request: NextRequest) {
       },
     });
 
+    // Detail per template (untuk UI menampilkan matrix shift)
+    const templates = await prisma.shiftTemplate.findMany({
+      where: { storeId, aktif: true },
+      select: { id: true, nama: true, jamMulaiMenit: true, jamSelesaiMenit: true, lintasHari: true, hariKerja: true },
+      orderBy: { jamMulaiMenit: "asc" },
+    });
+
     const kapasitasPerShift =
       jumlahTemplate > 0 ? Math.floor(jumlahKaryawan / jumlahTemplate) : 0;
 
@@ -104,6 +111,15 @@ export async function GET(request: NextRequest) {
       kapasitasPerShift,
       bisaGenerate: jumlahTemplate > 0 && kapasitasPerShift >= 1,
       konflikTanggal: konflik,
+      templates: templates.map((t) => ({
+        id: t.id,
+        nama: t.nama,
+        jamMulaiMenit: t.jamMulaiMenit,
+        jamSelesaiMenit: t.jamSelesaiMenit,
+        lintasHari: t.lintasHari,
+        hariKerja: t.hariKerja,
+        kapasitasPerShift,
+      })),
     });
   } catch (err) {
     console.error("GET /api/shift-instance/generate/preflight error:", err);
