@@ -41,6 +41,8 @@ function menuUntukRole(role: Role): MenuItem[] {
   if (role === "KEPALA_TOKO") {
     items.push({ href: "/setoran", label: "Setor Uang" });
     items.push({ href: "/setoran/terima", label: "Terima Setoran" });
+    items.push({ href: "/jadwal", label: "Jadwal Shift" });
+    items.push({ href: "/jadwal/generate", label: "Generate Jadwal" });
   }
 
   if (
@@ -55,11 +57,15 @@ function menuUntukRole(role: Role): MenuItem[] {
     items.push({ href: "/master/toko", label: "Master Toko" });
     items.push({ href: "/master/karyawan", label: "Master Karyawan" });
     items.push({ href: "/setoran/terima", label: "Terima Setoran" });
+    items.push({ href: "/jadwal", label: "Jadwal Shift" });
+    items.push({ href: "/jadwal/generate", label: "Generate Jadwal" });
   }
 
   if (role === "DIREKTUR") {
     items.push({ href: "/laporan/kehadiran", label: "Laporan Kehadiran" });
     items.push({ href: "/setoran/terima", label: "Terima Setoran" });
+    items.push({ href: "/jadwal", label: "Jadwal Shift" });
+    items.push({ href: "/jadwal/generate", label: "Generate Jadwal" });
   }
 
   if (role === "MANAJER") {
